@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import type { CadDocument, Camera, Draft, Point, Snap, Tool } from '../cad/types'
+import type { CadDocument, Camera, Draft, EditTool, Point, Snap, Tool } from '../cad/types'
 import { distance, hitTest, nearestSnap, orthoPoint, roundPoint, toScreen, toWorld, zoomAt } from '../cad/geometry'
+import { rotateEntity, translateEntity } from '../cad/editing'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
@@ -9,6 +10,7 @@ interface Props {
   cursor: Point; onCursorChange: (v: Point) => void
   onPoint: (p: Point) => void; onSelect: (id: string | null) => void
   osnap: boolean; ortho: boolean; grid: boolean
+  edit: { kind: EditTool; base: Point | null } | null
 }
 
 const gridStep = (scale: number): number => {
@@ -39,7 +41,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entit
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -92,9 +94,24 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     for (const entity of doc.entities) {
       const layer = doc.layers.find(l => l.id === entity.layerId)
       if (!layer?.visible) continue
-      ctx.strokeStyle = selectedId === entity.id ? '#ffcc79' : layer.color
-      ctx.lineWidth = selectedId === entity.id ? 2.4 : Math.max(1, Math.min(4, layer.lineweight * 4))
+      ctx.strokeStyle = selectedId === entity.id ? '#ffcc79' : entity.color && entity.color !== 'ByLayer' ? entity.color : layer.color
+      const weight = typeof entity.lineweight === 'number' ? entity.lineweight : layer.lineweight
+      ctx.lineWidth = selectedId === entity.id ? 2.4 : Math.max(1, Math.min(4, weight * 4))
+      const type = entity.linetype && entity.linetype !== 'ByLayer' ? entity.linetype : layer.linetype ?? 'continuous'
+      ctx.setLineDash(type === 'dashed' ? [9, 6] : type === 'center' ? [16, 5, 3, 5] : [])
       drawEntity(ctx, entity, camera, w, h)
+      ctx.setLineDash([])
+    }
+    if (edit?.base && selectedId) {
+      const original = doc.entities.find(e => e.id === selectedId)
+      if (original) {
+        const ghost = edit.kind === 'rotate'
+          ? rotateEntity(original, edit.base, Math.atan2(hover.y - edit.base.y, hover.x - edit.base.x) * 180 / Math.PI)
+          : translateEntity(original, { x: hover.x - edit.base.x, y: hover.y - edit.base.y })
+        ctx.strokeStyle = '#7cc5ff'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5])
+        drawEntity(ctx, ghost, camera, w, h)
+        ctx.setLineDash([])
+      }
     }
     if (draft?.points.length) {
       const layer = doc.layers.find(l => l.id === doc.activeLayerId)
@@ -116,7 +133,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, snap])
+  }, [doc, camera, size, grid, draft, hover, selectedId, snap, edit])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -125,6 +142,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
   function effectivePoint(screen: Point): Point {
     let p = toWorld(screen, camera, size.width, size.height)
     if (ortho && draft?.points.length) p = orthoPoint(draft.points.at(-1)!, p)
+    else if (ortho && edit?.base && edit.kind !== 'rotate') p = orthoPoint(edit.base, p)
     if (osnap) {
       const visible = new Set(doc.layers.filter(l => l.visible).map(l => l.id))
       const found = nearestSnap(p, doc.entities, visible, 12 / camera.scale)
@@ -153,12 +171,13 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     if (ev.button !== 0) return
     const point = effectivePoint(screen)
     setHover(point); onCursorChange(point)
+    if (edit) { onPoint(point); return }
     if (tool === 'select') {
       let match: string | null = null, closest = 12 / camera.scale
       for (const entity of [...doc.entities].reverse()) {
         const layer = doc.layers.find(l => l.id === entity.layerId)
         if (!layer?.visible || layer.locked) continue
-        const d = hitTest(point, entity)
+        const d = hitTest(toWorld(screen, camera, size.width, size.height), entity)
         if (d < closest) { closest = d; match = entity.id }
       }
       onSelect(match)
