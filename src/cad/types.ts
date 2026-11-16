@@ -1,6 +1,6 @@
 export interface Point { x: number; y: number }
 export interface Camera extends Point { scale: number }
-export type Tool = 'select' | 'line' | 'polyline' | 'rectangle' | 'circle'
+export type Tool = 'select' | 'line' | 'polyline' | 'rectangle' | 'circle' | 'wall'
 export type EditTool = 'move' | 'copy' | 'rotate'
 export type LineType = 'continuous' | 'dashed' | 'center'
 export type PropertyValue<T> = T | 'ByLayer'
