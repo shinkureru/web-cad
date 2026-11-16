@@ -10,6 +10,7 @@ import { findCommand, parsePointInput } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
+import { wallOutline } from './cad/walls'
 import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
 import type { LibraryPreset } from './cad/blocks'
 import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType } from './cad/types'
@@ -32,6 +33,7 @@ const tools: { id: Tool; label: string; alias: string; Icon: typeof Minus }[] = 
   { id: 'polyline', label: '聚合線', alias: 'PL', Icon: PenLine },
   { id: 'rectangle', label: '矩形', alias: 'REC', Icon: Square },
   { id: 'circle', label: '圓形', alias: 'C', Icon: Circle },
+  { id: 'wall', label: '雙線牆', alias: 'W', Icon: Layers3 },
 ]
 
 function loadDocument(): CadDocument {
@@ -85,6 +87,7 @@ export default function App() {
   const [grid, setGrid] = useState(true)
   const [osnap, setOsnap] = useState(true)
   const [ortho, setOrtho] = useState(false)
+  const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
   const [log, setLog] = useState<string[]>(['Web CAD v0.3.0 已啟動。Shift+點選多物件後輸入 B 建立圖塊；I 插入、X 分解。'])
   const [panelOpen, setPanelOpen] = useState(true)
@@ -230,6 +233,7 @@ export default function App() {
     }
     let entity: CadEntity
     if (tool === 'line') entity = { id: uid(), layerId: layer.id, kind: 'line', start: points[0], end: p }
+    else if (tool === 'wall') entity = { id: uid(), layerId: layer.id, kind: 'polyline', points: wallOutline(points[0], p, wallThickness) }
     else if (tool === 'rectangle') entity = { id: uid(), layerId: layer.id, kind: 'rectangle', start: points[0], end: p }
     else entity = { id: uid(), layerId: layer.id, kind: 'circle', center: points[0], radius: distance(points[0], p) }
     editDoc(current => ({ ...current, entities: [...current.entities, entity] }))
@@ -395,12 +399,14 @@ export default function App() {
           <div className="toolbar-set"><button title="復原 Ctrl+Z" disabled={!history.past.length} onClick={() => dispatch({ type: 'undo' })}><Undo2 size={16}/></button><button title="重做 Ctrl+Y" disabled={!history.future.length} onClick={() => dispatch({ type: 'redo' })}><Redo2 size={16}/></button></div>
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button className={grid ? 'pressed' : ''} title="顯示格線" onClick={() => setGrid(!grid)}><Grid3X3 size={16}/> 格線</button><button className={osnap ? 'pressed' : ''} title="物件鎖點 F3" onClick={() => setOsnap(!osnap)}><Scan size={16}/> 鎖點</button><button className={ortho ? 'pressed' : ''} title="正交 F8" onClick={() => setOrtho(!ortho)}><CornerDownLeft size={16}/> 正交</button></div>
+          {tool === 'wall' && <label className="wall-thickness">牆厚 <input aria-label="牆厚（mm）" type="number" value={wallThickness} min={1} max={2000} step={10}
+            onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1 && n <= 2000) setWallThickness(n) }}/><span>mm</span></label>}
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button title="放大" onClick={() => setCamera(c => ({ ...c, scale: Math.min(40, c.scale * 1.3) }))}><ZoomIn size={17}/></button><button title="縮小" onClick={() => setCamera(c => ({ ...c, scale: Math.max(.004, c.scale / 1.3) }))}><ZoomOut size={17}/></button><button title="縮放至圖面範圍" onClick={fitView}><Scan size={16}/> 全圖</button></div>
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} cursor={cursor} onCursorChange={setCursor} onPoint={p => blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} cursor={cursor} onCursorChange={setCursor} onPoint={p => blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
         <section className="command-area" aria-label="CAD 指令列">
@@ -474,7 +480,7 @@ export default function App() {
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.3.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
-      ['L / LINE', '直線'], ['PL / PLINE', '聚合線（Enter 完成）'], ['REC / RECTANG', '矩形'], ['C / CIRCLE', '圓形'],
+      ['L / LINE', '直線'], ['W / WALL', '單段等厚雙線牆（牆厚工具列設定）'], ['PL / PLINE', '聚合線（Enter 完成）'], ['REC / RECTANG', '矩形'], ['C / CIRCLE', '圓形'],
       ['B / BLOCK', 'Shift+點選多個基本圖元 → 輸入名稱 → 指定基準點'], ['I / INSERT', '插入圖面圖塊庫中的圖塊'], ['X / EXPLODE', '分解已選取圖塊參照'],
       ['Shift+點選', '加入或移除多重選取（B 建立圖塊）'],
       ['M / MOVE', '移動所選物件：基準點 → 目標點'], ['CO / COPY', '複製所選物件：基準點 → 目標點'], ['RO / ROTATE', '旋轉所選物件：中心點 → 角度（度）'], ['E / ERASE', '刪除已選取物件'], ['U / UNDO', '復原'], ['REDO', '重做'], ['Z / ZOOM', '縮放至全圖'], ['SAVE', '匯出原生 JSON'],
