@@ -1,11 +1,11 @@
-import type { CadDocument, CadEntity, CadLayer, Point } from './types'
+import type { BlockDefinition, CadDocument, CadEntity, CadLayer, Point } from './types'
 
 export const STORAGE_KEY = 'web-cad:v1:document'
 export const uid = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 
 export function createDocument(): CadDocument {
   return {
-    version: 1, name: '未命名圖面', unit: 'mm', activeLayerId: '0', entities: [],
+    version: 1, name: '未命名圖面', unit: 'mm', activeLayerId: '0', entities: [], blocks: [],
     layers: [
       { id: '0', name: '0', color: '#e7edf3', lineweight: 0.25, visible: true, locked: false },
       { id: 'wall', name: '牆體', color: '#f19c81', lineweight: 0.5, visible: true, locked: false },
@@ -38,8 +38,18 @@ function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
     case 'line': case 'rectangle': return isPoint(e.start) && isPoint(e.end)
     case 'polyline': return Array.isArray(e.points) && e.points.length >= 2 && e.points.every(isPoint)
     case 'circle': return isPoint(e.center) && Number.isFinite(e.radius) && e.radius > 0
+    case 'insert': return typeof e.blockId === 'string' && isPoint(e.position)
+      && Number.isFinite(e.rotation)
     default: return false
   }
+}
+function isBlock(value: unknown, layers: Set<string>): value is BlockDefinition {
+  if (!value || typeof value !== 'object') return false
+  const block = value as BlockDefinition
+  return typeof block.id === 'string' && block.id.length > 0
+    && typeof block.name === 'string' && block.name.trim().length > 0
+    && Array.isArray(block.entities) && block.entities.length > 0
+    && block.entities.every(e => (e as CadEntity).kind !== 'insert' && isEntity(e, layers))
 }
 /** Strict validation of the prototype's native JSON format. Never render unknown schema entities. */
 export function parseDocument(input: unknown): CadDocument {
@@ -52,6 +62,16 @@ export function parseDocument(input: unknown): CadDocument {
   if (layerIds.size !== d.layers.length || typeof d.activeLayerId !== 'string'
     || !layerIds.has(d.activeLayerId) || !d.entities.every(e => isEntity(e, layerIds))) {
     throw new Error('圖面內容驗證失敗')
+  }
+  const blocks = d.blocks ?? []
+  if (!Array.isArray(blocks) || blocks.length > 300 || !blocks.every(b => isBlock(b, layerIds))) {
+    throw new Error('圖塊定義無效')
+  }
+  const blockIds = new Set(blocks.map(b => b.id))
+  if (blockIds.size !== blocks.length
+    || new Set(d.entities.map(e => e.id)).size !== d.entities.length
+    || d.entities.some(e => e.kind === 'insert' && !blockIds.has(e.blockId))) {
+    throw new Error('圖塊參照或圖元 ID 無效')
   }
   return d as CadDocument
 }

@@ -1,58 +1,54 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-16　｜　版本：v0.2.0　｜　Repo：`shinkureru/web-cad`
+更新：2026-11-16　｜　版本：v0.3.0　｜　Repo：`shinkureru/web-cad`
 
-## 願景與協作
+## 專案目標與流程
 
-同一 CAD 核心支援桌面 2D 精密室內製圖與手機／平板輕量編修。毫米精度、CAD 指令、DWG/DXF 往返及正式施工出圖都是長期驗收目標。
+同一 2D CAD 核心支援桌面室內設計製圖及行動編修。每批在 `feat/vX.Y.Z-*` 上提交 PR，使用者自行驗收與 Merge；不直接修改 main。接續前必須比對最新 main、PR、測試與本文件。
 
-- 每次版本使用 `feat/vX.Y.Z-*` 分支及獨立 PR；使用者自行 Merge；未經確認不修改 `main`。
-- 下一批先核對最新 `main`、PR、Actions、部署及本檔案。
-- 不可以宣稱已具備尚未測試的施工圖相容性。
+## v0.3.0：圖塊與室內設計圖塊庫
 
-## 架構
+- `src/cad/types.ts`：新增 `BlockDefinition`（一層局部座標圖元）與 `InsertEntity`（位置、角度、所在圖層），原生檔案 `CadDocument.version=1`；`blocks?` 選填支援 v0.1/v0.2 舊檔。
+- `src/cad/blocks.ts`：建立圖塊／局部座標轉換、參照展開、分解（保留圖塊定義）、床／沙發／餐桌／單開門／平面窗預設圖庫。
+- `src/cad/walls.ts`：中心線兩點及設定牆厚形成單段等厚的封閉牆輪廓，搭配 `W/WALL`、畫布預覽和工具列牆厚數字欄位；預設 120 mm。
+- `src/cad/document.ts`：JSON 結構驗證圖塊定義與參照、拒絕遺失定義與巢狀參照、檢查重複圖元與圖塊 ID。
+- `src/cad/editing.ts`：圖塊參照支援平移／旋轉；複製保持共同定義。
+- `src/components/CadCanvas.tsx`：圖塊作為單一物件選取，展開幾何供畫布顯示、交點／端點鎖點與命中測試；插入時虛線預覽。
+- `src/App.tsx`：Shift+點擊多選、B/BLOCK 圖塊名稱與基準點輸入、I/INSERT 插入圖塊、X/EXPLODE 分解；右側圖塊庫包含 5 種室內設計圖塊及角度調整。
+- 本版本不含 DXF/DWG/PDF、尺寸標註、巢狀圖塊、BEDIT 定義編輯及正式施工圖出圖；不得用於正式放樣。
 
-- React 18 + TypeScript + Vite 6、Canvas 2D。原生圖面 `CadDocument.version=1`、模型空間 mm。
-- `src/cad/geometry.ts`：世界座標、螢幕投影、正交、命中、有限線段／線圓／圓圓交點鎖點。
-- `src/cad/editing.ts`：可獨立單元測試的平移、旋轉；旋轉矩形會轉成封閉聚合線，避免軸向矩形誤表達。
-- `src/cad/commands.ts`：指令別名及絕對、相對、極座標輸入。
-- `src/cad/document.ts`：檔案結構驗證、可選 ByLayer 覆寫、100 步復原歷史。
-- `src/components/CadCanvas.tsx`：畫布、格線、游標預覽、交點鎖點、ByLayer 畫面線型及編輯虛線預覽。
-- `src/App.tsx`：指令列、基本繪圖、單物件編修、圖層和屬性面板、儲存與開啟。
+## 使用與驗收
 
-## v0.2.0 新增
+1. `npm install --no-audit --no-fund && npm test && npm run build`。
+2. 以 `L` 畫線，Shift+點選兩條線後輸入 `B` → `TEST` → `0,0`，應成為單一圖塊；原始幾何位置不變。
+3. 輸入 `I` → `5000,0`，應插入同一圖塊的新參照；兩個參照是不同實體且共用定義。
+4. 點選第二個圖塊，輸入 `M`、`CO`、`RO` 檢查位置／角度；分解 `X` 後可獨立選取線段。
+5. `W` → 牆厚 120 → `0,0` → `3000,0`，產生 3000 mm 長、120 mm 厚的單段牆輪廓。
+6. 右側預設圖塊庫插入雙人床、沙發、餐桌、門、窗；旋轉角度及圖層可調整，圖塊端點鎖點正常。
+7. 匯出 `.webcad.json` → 重新匯入 → 檢查圖塊名稱、角度、幾何與圖層；既有 v0.2 圖面仍可匯入。
+8. 圖層鎖定／隱藏時，整個圖塊不可修改／不可選取；跨圖層合併時將不同圖層外觀保存為明確覆寫。
+9. GitHub Actions 建置測試通過，Merge 後測試 GitHub Pages。
 
-1. 真實有限圖元之交點鎖點：線段／Polyline／Rectangle／Circle，游標附近候選篩選，重合線不偽造單一交點。
-2. 選取單一物件後使用 `M`/MOVE、`CO`/COPY、`RO`/ROTATE；先指定基準點，再指定終點或角度；有虛線預覽。
-3. 圖層線型 Continuous／Dashed／Center；單一物件顏色／線粗／線型覆寫及 ByLayer、變更圖層。
-4. 鎖定／隱藏圖層不可修改或刪除該圖層的物件。v0.1 JSON 舊檔可讀，新增欄位均為選填。
-5. 新增交點、變換及資料格式測試。
+## 限制、風險與技術債
 
-## 驗收步驟
+- 圖塊為 **single-level primitive definitions**。不支援巢狀 INSERT、非等比例縮放、動態屬性、弧形 ARC 及外部參照。
+- 內部圖元在渲染時統一繼承 INSERT 的所在圖層；跨圖層建塊時保留當時的顏色／線粗等覆寫，不再隨原圖層變動。
+- 牆工具僅支援單段封閉輪廓，尚無接角、牆洞、交會處自動修剪、曲牆或牆體智慧物件。
+- 預設門片的開啟軌跡為聚合線近似示意，不是可編輯的 ARC。門洞、牆體開口及門扇實際施工尺寸需要另外建置。
+- 目前 Shift+點選主要供建立圖塊；M/CO/RO 與屬性面板仍是針對最後一個選取物件編輯。
+- 本機 localStorage 非完整工程檔版本管理，需定期匯出 JSON 備份；尚未完成 E2E、正式施工圖驗收與 DWG/DXF/PDF 格式相容。
+- 圖塊內局部物件不直接受其原始圖層的顯示／鎖定控制，參照整體受插入圖層控制。
 
-1. PR Actions：`npm test` 與 `npm run build` 成功。
-2. `L` 繪製 0,0 → 3000,3000 和 0,3000 → 3000,0，游標移到 1500,1500 應鎖「交點」。
-3. 選取線 → `M` → `0,0` → `@300,0`，確認位移 300 mm，Undo 可還原。
-4. 選取物件 → `CO` → `0,0` → `@0,400`，原件保留、複製件獨立。
-5. 選取矩形 → `RO` → `0,0` → `90`，轉成封閉聚合線，旋轉角度正確。
-6. 選取物件，在面板中變更圖層、顏色、線粗、線型、ByLayer；匯出 JSON 再匯入。
-7. 鎖定圖層後不可移動、旋轉、複製、刪除該物件；顯示／隱藏應影響鎖點。
-8. Merge 後 GitHub Pages 開啟並實際瀏覽器操作測試。
+## Cota 靜態建置驗證流程
 
-## 已知限制與技術債
+- `.github/workflows/cota-poc.yml` 可由 GitHub Actions 手動選擇 **Cota upstream feasibility (manual)** 執行。
+- 以 pinned upstream commit `f6731b3d55561269b912484ee7915606334b1924` 建置 GitHub Pages 子路徑，預期會在成功時產生 artifact；不修改此 Repo 的 main 或部署網站。
+- **尚未手動執行**。此流程只測試 upstream 靜態建置，不代表 Cota 已導入或 DXF/DWG 相容性合格。
 
-- 仍為技術原型，未完成正式施工圖驗收，不得直接用於施工定稿。
-- 目前僅單一物件選取／編修；缺多選、TRIM／OFFSET、文字、標註、圖塊、DXF／DWG、PDF 比例出圖。
-- 交點只處理有限圖元間的真交點，不支援延伸虛交點／重疊區段特殊交點及相切鎖點模式。
-- 旋轉相對世界 +X 軸，正角度逆時針；矩形旋轉後的物件種類改成 polyline。
-- 線型、線粗是螢幕視覺效果，尚非實體圖紙的毫米線粗。
-- localStorage 非可靠工程資料庫，需定期匯出備份；尚無雲端版本衝突管理。
-- 即使單元測試通過，仍需使用者以瀏覽器實際操作驗收。
+## Cota 評估
 
-## 後續規劃
+保留 Cota 當作大型正式 CAD 核心候選，本 PR 只建立原生單層圖塊與必要的幾何驗證；**沒有 Fork、嵌入或聲稱 Cota 上游已通過部署／格式往返測試**。若未來導入，先獨立驗證 Pages base、繁體中文標註、BLOCK/INSERT/DIMENSION 及 DXF/DWG 開啟與存檔，保留 Apache-2.0 LICENSE／NOTICE。詳細請見 `docs/CAD_ENGINE_EVALUATION.md`。
 
-- `v0.3.0`：圖塊／常用家具門窗圖塊、牆體工具，並以獨立 Cota fork 做 Pages／圖檔往返 POC。
-- `v0.4.0`：文字、尺寸標註、樣式、繁體中文字型。
-- `v0.5.0`：DXF/DWG 往返與 PDF 比例出圖、施工圖測試。
+## 下一批
 
-完整核心候選技術分析見 `docs/CAD_ENGINE_EVALUATION.md`。
+`v0.4.0` 文字、尺寸標註、標註樣式與繁體中文支援；另安排 Cota 靜態建置及 DXF/DWG 往返 POC 以決定是否採更完整引擎。

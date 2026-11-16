@@ -7,6 +7,7 @@ export function translateEntity(entity: CadEntity, offset: Point): CadEntity {
     case 'line': case 'rectangle': return { ...entity, start: move(entity.start), end: move(entity.end) }
     case 'polyline': return { ...entity, points: entity.points.map(move) }
     case 'circle': return { ...entity, center: move(entity.center) }
+    case 'insert': return { ...entity, position: move(entity.position) }
   }
 }
 /** Positive angles are counter-clockwise. A rotated rectangle becomes a closed polyline. */
@@ -25,5 +26,6 @@ export function rotateEntity(entity: CadEntity, pivot: Point, degrees: number): 
     }
     case 'polyline': return { ...entity, points: entity.points.map(spin) }
     case 'circle': return { ...entity, center: spin(entity.center) }
+    case 'insert': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
   }
 }

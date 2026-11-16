@@ -36,6 +36,7 @@ export function entitySnaps(entity: CadEntity): Snap[] {
       return [...corners.map(end), ...corners.map((p, i) => mid(p, corners[(i + 1) % 4]))]
     }
     case 'circle': return [{ point: entity.center, kind: '圓心' }]
+    case 'insert': return [] // Caller expands block references using the document before snapping.
   }
 }
 
@@ -71,6 +72,7 @@ export function hitTest(p: Point, entity: CadEntity): number {
       return Math.min(...corners.map((v, i) => segmentDistance(p, v, corners[(i + 1) % 4])))
     }
     case 'circle': return Math.abs(distance(p, entity.center) - entity.radius)
+    case 'insert': return Infinity // Hit testing of inserts is on flattened primitives.
   }
 }
 
@@ -88,7 +90,7 @@ export function entitySegments(entity: CadEntity): Segment[] {
       const a = entity.start, b = entity.end
       return segments([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true)
     }
-    case 'circle': return []
+    case 'circle': case 'insert': return []
   }
 }
 const dot = (a: Point, b: Point): number => a.x * b.x + a.y * b.y

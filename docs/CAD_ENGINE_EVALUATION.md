@@ -28,6 +28,13 @@
 - Cota 上游使用說明：<https://github.com/mxchristian17/cota/blob/main/README.md>
 - Apache 2.0 原始授權：<https://github.com/mxchristian17/cota/blob/main/LICENSE>
 
+## v0.3.0 可重現的 Cota 靜態建置 POC
+
+- 新增 `.github/workflows/cota-poc.yml`，以 `workflow_dispatch` 手動執行；固定上游提交 `f6731b3d55561269b912484ee7915606334b1924`，安裝 `services/web` 套件並使用 `VITE_CLOUD=off COTA_BASE=/web-cad/ npm run build`。
+- 成功時上傳獨立的 `cota-pinned-static-build` artifact 供檢查；**不取代目前 Web CAD，也不會因一般 PR 自動觸發**。
+- 工作流程目前只提供可重現的**靜態建置可行性**，未實際觸發 Cota 的 CI。即使此工作流程成功，仍未驗證施工用 DWG/DXF 往返、中文字型及尺寸標註。
+- 若要決策採用 Cota，後續需取得合法的施工圖測試樣本，跑真實的雙向格式匯入匯出、佈署子路徑和視覺／數值比對，並遵守 Apache-2.0 LICENSE / NOTICE。
+
 ## v0.2.0 補充評估（2026-11-16）
 
 查閱上游 `services/web/package.json`、`docs/architecture.md`、`docs/self-hosting.md`，確認以下資訊：

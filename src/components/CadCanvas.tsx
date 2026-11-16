@@ -3,14 +3,17 @@ import type React from 'react'
 import type { CadDocument, Camera, Draft, EditTool, Point, Snap, Tool } from '../cad/types'
 import { distance, hitTest, nearestSnap, orthoPoint, roundPoint, toScreen, toWorld, zoomAt } from '../cad/geometry'
 import { rotateEntity, translateEntity } from '../cad/editing'
+import { wallOutline } from '../cad/walls'
+import { expandEntity, expandedDrawing } from '../cad/blocks'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
-  tool: Tool; draft: Draft | null; selectedId: string | null
+  tool: Tool; draft: Draft | null; selectedId: string | null; selectedIds: string[]
   cursor: Point; onCursorChange: (v: Point) => void
-  onPoint: (p: Point) => void; onSelect: (id: string | null) => void
+  onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
+  blockPreview: string | null; pointInputMode: boolean; wallThickness: number
 }
 
 const gridStep = (scale: number): number => {
@@ -41,7 +44,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entit
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -91,12 +94,12 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y)
       ctx.stroke()
     }
-    for (const entity of doc.entities) {
+    for (const entity of expandedDrawing(doc)) {
       const layer = doc.layers.find(l => l.id === entity.layerId)
       if (!layer?.visible) continue
-      ctx.strokeStyle = selectedId === entity.id ? '#ffcc79' : entity.color && entity.color !== 'ByLayer' ? entity.color : layer.color
+      ctx.strokeStyle = selectedIds.includes(entity.id) ? '#ffcc79' : entity.color && entity.color !== 'ByLayer' ? entity.color : layer.color
       const weight = typeof entity.lineweight === 'number' ? entity.lineweight : layer.lineweight
-      ctx.lineWidth = selectedId === entity.id ? 2.4 : Math.max(1, Math.min(4, weight * 4))
+      ctx.lineWidth = selectedIds.includes(entity.id) ? 2.4 : Math.max(1, Math.min(4, weight * 4))
       const type = entity.linetype && entity.linetype !== 'ByLayer' ? entity.linetype : layer.linetype ?? 'continuous'
       ctx.setLineDash(type === 'dashed' ? [9, 6] : type === 'center' ? [16, 5, 3, 5] : [])
       drawEntity(ctx, entity, camera, w, h)
@@ -109,16 +112,26 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
           ? rotateEntity(original, edit.base, Math.atan2(hover.y - edit.base.y, hover.x - edit.base.x) * 180 / Math.PI)
           : translateEntity(original, { x: hover.x - edit.base.x, y: hover.y - edit.base.y })
         ctx.strokeStyle = '#7cc5ff'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5])
-        drawEntity(ctx, ghost, camera, w, h)
+        for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h)
         ctx.setLineDash([])
       }
+    }
+    if (blockPreview) {
+      ctx.strokeStyle = '#7bd9d0'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4])
+      const ghost = { id: 'preview', kind: 'insert' as const, blockId: blockPreview,
+        position: hover, rotation: 0, layerId: doc.activeLayerId }
+      for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h)
+      ctx.setLineDash([])
     }
     if (draft?.points.length) {
       const layer = doc.layers.find(l => l.id === doc.activeLayerId)
       ctx.strokeStyle = layer?.color ?? '#ffffff'; ctx.lineWidth = 1.5
       ctx.setLineDash([6, 5])
       const points = draft.points
-      if (draft.tool === 'circle') {
+      if (draft.tool === 'wall' && distance(points[0], hover) > .001) {
+        drawEntity(ctx, { id: 'draft', kind: 'polyline', layerId: doc.activeLayerId,
+          points: wallOutline(points[0], hover, wallThickness) }, camera, w, h)
+      } else if (draft.tool === 'circle') {
         drawEntity(ctx, { id: 'draft', kind: 'circle', layerId: doc.activeLayerId, center: points[0], radius: distance(points[0], hover) }, camera, w, h)
       } else if (draft.tool === 'rectangle') {
         drawEntity(ctx, { id: 'draft', kind: 'rectangle', layerId: doc.activeLayerId, start: points[0], end: hover }, camera, w, h)
@@ -133,7 +146,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, snap, edit])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -145,7 +158,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     else if (ortho && edit?.base && edit.kind !== 'rotate') p = orthoPoint(edit.base, p)
     if (osnap) {
       const visible = new Set(doc.layers.filter(l => l.visible).map(l => l.id))
-      const found = nearestSnap(p, doc.entities, visible, 12 / camera.scale)
+      const found = nearestSnap(p, expandedDrawing(doc), visible, 12 / camera.scale)
       setSnap(found)
       if (found) return roundPoint(found.point)
     } else setSnap(null)
@@ -171,16 +184,16 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     if (ev.button !== 0) return
     const point = effectivePoint(screen)
     setHover(point); onCursorChange(point)
-    if (edit) { onPoint(point); return }
+    if (edit || pointInputMode) { onPoint(point); return }
     if (tool === 'select') {
       let match: string | null = null, closest = 12 / camera.scale
       for (const entity of [...doc.entities].reverse()) {
         const layer = doc.layers.find(l => l.id === entity.layerId)
         if (!layer?.visible || layer.locked) continue
-        const d = hitTest(toWorld(screen, camera, size.width, size.height), entity)
+        const d = Math.min(Infinity, ...expandEntity(entity, doc).map(part => hitTest(toWorld(screen, camera, size.width, size.height), part)))
         if (d < closest) { closest = d; match = entity.id }
       }
-      onSelect(match)
+      onSelect(match, ev.shiftKey)
     } else {
       const layer = doc.layers.find(l => l.id === doc.activeLayerId)
       if (layer?.visible && !layer.locked) onPoint(point)

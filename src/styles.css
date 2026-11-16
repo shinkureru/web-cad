@@ -11,3 +11,26 @@
 .entity-properties input[type=color] { width:100%; height:30px; background:#161c24; border:1px solid #3c4551; border-radius:4px; cursor:pointer }
 .info-block { padding-bottom:14px }
 @media(max-height:700px){ .rail-tool { height:48px } .rail-separator { margin:3px 0 } }
+
+/* v0.3.0 — reusable blocks, palette and multi-selection */
+.block-library { padding:0 15px 18px; display:flex; flex-direction:column; gap:9px; }
+.block-library p {margin:0;color:#8d9aaa;font-size:10px;line-height:1.6}
+.block-library label {display:flex;flex-direction:column;gap:6px;color:#a8b6c5;font-size:11px}
+.block-library select,.block-angle input {min-height:31px;max-width:100%;padding:6px 8px;border-radius:5px;border:1px solid #465364;background:#151b22;color:#d6e4ef;font-size:11px}
+.block-library select {color-scheme:dark}
+.block-action {border:1px solid #486383;background:#243449;color:#d6e9f8;border-radius:5px;padding:9px 10px;font-size:11px;text-align:left}
+.block-action:hover:not(:disabled) {background:#314d68}
+.block-action:disabled {opacity:.42;cursor:not-allowed}
+.block-preset-title {margin-top:8px;font-weight:700;font-size:10px;color:#aec4da;letter-spacing:.04em}
+.block-preset {display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #35414d;border-radius:5px;background:#171e26;padding:8px}
+.block-preset div {display:flex;flex-direction:column;gap:3px;min-width:0}
+.block-preset strong {color:#d9e2eb;font-size:11px;line-height:1.4;font-weight:500}
+.block-preset small {font-size:10px;color:#8d9baa}
+.block-preset button {border:1px solid #536879;color:#cde1f3;padding:5px 8px;border-radius:4px;font-size:10px;flex-shrink:0}
+.block-preset button:hover {background:#354d64}
+.block-angle {display:flex;flex-direction:column;gap:5px;color:#a8b6c5;font-size:10px;padding:6px 0}
+
+/* v0.3.0 — precise wall outline tool */
+.wall-thickness{display:flex;align-items:center;gap:6px;font-size:11px;color:#a7b9c9;white-space:nowrap}
+.wall-thickness input{width:67px;height:29px;background:#141a22;color:#d7e9f8;border:1px solid #41536a;border-radius:4px;padding:0 6px;font-size:12px}
+@media(max-width:930px){.wall-thickness{max-width:105px}.wall-thickness input{width:52px}}
