@@ -27,3 +27,16 @@
 - Cota：<https://github.com/mxchristian17/cota>
 - Cota 上游使用說明：<https://github.com/mxchristian17/cota/blob/main/README.md>
 - Apache 2.0 原始授權：<https://github.com/mxchristian17/cota/blob/main/LICENSE>
+
+## v0.2.0 補充評估（2026-11-16）
+
+查閱上游 `services/web/package.json`、`docs/architecture.md`、`docs/self-hosting.md`，確認以下資訊：
+
+- Cota 的 web 專案位於 `services/web/`（目前 package 版本 2.46.0），使用 React 19、Zustand 5、Three.js；本 Repo 目前 React 18 + Canvas 2D。兩者文件模型、渲染及狀態管理不一致，不適合直接拼接元件。
+- 上游的 `src/core`、`src/render`、`src/store`、`src/ui` 已分層，CommandEngine 與尺寸、圖塊、DWG/DXF 系統具有高參考價值；原生 `.cota` 格式也與本 Repo 的 `.webcad.json` 不同。
+- 上游文件指出靜態部署可用 `VITE_CLOUD=off COTA_BASE=/web-cad/ npm run build`，且可使用 GitHub Pages；**這只是上游文件核對，沒有宣稱本 Repo 已通過 Cota 的建置或 E2E。**
+- 上游 DWG 採 `@node-projects/acad-ts` 在瀏覽器讀寫；仍需正式施工圖往返及繁體中文字型驗證。
+
+**決策**：v0.2.0 延續輕量自主 2D 原型以驗證幾何精度與指令互動，先不複製 Cota 原始碼。v0.3.0 前應做獨立 Fork／Pages 建置及真實 DXF/DWG 施工圖往返 POC，再決定是否遷移長期核心。若引入上游須保留 Apache-2.0 LICENSE、NOTICE 和作者標示。
+
+上游參考：<https://github.com/mxchristian17/cota/blob/main/services/web/package.json>、<https://github.com/mxchristian17/cota/blob/main/docs/architecture.md>、<https://github.com/mxchristian17/cota/blob/main/docs/self-hosting.md>。

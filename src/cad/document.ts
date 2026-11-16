@@ -24,12 +24,16 @@ function isLayer(x: unknown): x is CadLayer {
   return typeof layer.id === 'string' && typeof layer.name === 'string'
     && /^#[0-9a-fA-F]{6}$/.test(layer.color)
     && Number.isFinite(layer.lineweight) && layer.lineweight >= 0
+    && (layer.linetype === undefined || ['continuous', 'dashed', 'center'].includes(layer.linetype))
     && typeof layer.visible === 'boolean' && typeof layer.locked === 'boolean'
 }
 function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
   if (!x || typeof x !== 'object') return false
   const e = x as CadEntity
   if (typeof e.id !== 'string' || !layers.has(e.layerId)) return false
+  if (e.color !== undefined && e.color !== 'ByLayer' && (typeof e.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(e.color))) return false
+  if (e.lineweight !== undefined && e.lineweight !== 'ByLayer' && (typeof e.lineweight !== 'number' || !Number.isFinite(e.lineweight) || e.lineweight < 0)) return false
+  if (e.linetype !== undefined && e.linetype !== 'ByLayer' && !['continuous','dashed','center'].includes(e.linetype)) return false
   switch (e.kind) {
     case 'line': case 'rectangle': return isPoint(e.start) && isPoint(e.end)
     case 'polyline': return Array.isArray(e.points) && e.points.length >= 2 && e.points.every(isPoint)

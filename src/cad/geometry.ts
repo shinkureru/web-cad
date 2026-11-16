@@ -49,6 +49,9 @@ export function nearestSnap(pointer: Point, entities: CadEntity[], visibleLayers
       if (d < min) { best = snap; min = d }
     }
   }
+  const intersection = nearestIntersection(pointer, entities, visibleLayers, toleranceWorld)
+  // When multiple snap kinds coincide, prefer intersection over midpoint/endpoint.
+  if (intersection && distance(pointer, intersection.point) <= min + 1e-6) return intersection
   return best
 }
 
@@ -69,4 +72,98 @@ export function hitTest(p: Point, entity: CadEntity): number {
     }
     case 'circle': return Math.abs(distance(p, entity.center) - entity.radius)
   }
+}
+
+/** Bounded, finite segments, as opposed to infinite construction lines. */
+export interface Segment { a: Point; b: Point }
+export function entitySegments(entity: CadEntity): Segment[] {
+  const segments = (points: Point[], closed = false): Segment[] => {
+    const seq = closed ? [...points, points[0]] : points
+    return seq.slice(1).map((p, i) => ({ a: seq[i], b: p }))
+  }
+  switch (entity.kind) {
+    case 'line': return [{ a: entity.start, b: entity.end }]
+    case 'polyline': return segments(entity.points)
+    case 'rectangle': {
+      const a = entity.start, b = entity.end
+      return segments([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true)
+    }
+    case 'circle': return []
+  }
+}
+const dot = (a: Point, b: Point): number => a.x * b.x + a.y * b.y
+const cross = (a: Point, b: Point): number => a.x * b.y - a.y * b.x
+const sub = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y })
+const EPS = 1e-9
+
+/** An overlap without one unique intersection is deliberately excluded. */
+export function segmentIntersection(p: Segment, q: Segment): Point | null {
+  const r = sub(p.b, p.a), s = sub(q.b, q.a)
+  const denom = cross(r, s)
+  if (Math.abs(denom) <= EPS * Math.max(1, Math.hypot(r.x, r.y) * Math.hypot(s.x, s.y))) return null
+  const difference = sub(q.a, p.a)
+  const t = cross(difference, s) / denom, u = cross(difference, r) / denom
+  if (t < -EPS || t > 1 + EPS || u < -EPS || u > 1 + EPS) return null
+  return roundPoint({ x: p.a.x + t * r.x, y: p.a.y + t * r.y })
+}
+export function segmentCircleIntersections(segment: Segment, center: Point, radius: number): Point[] {
+  const v = sub(segment.b, segment.a), start = sub(segment.a, center)
+  const a = dot(v, v)
+  if (a < EPS) return []
+  const b = 2 * dot(start, v), c = dot(start, start) - radius * radius
+  const discriminant = b * b - 4 * a * c
+  if (discriminant < -EPS) return []
+  const root = Math.sqrt(Math.max(0, discriminant))
+  const tValues = [(-b - root) / (2 * a), (-b + root) / (2 * a)]
+  const points: Point[] = []
+  for (const t of tValues) {
+    if (t < -EPS || t > 1 + EPS) continue
+    const p = roundPoint({ x: segment.a.x + v.x * t, y: segment.a.y + v.y * t })
+    if (!points.some(old => distance(old, p) < .001)) points.push(p)
+  }
+  return points
+}
+export function circleCircleIntersections(a: { center: Point; radius: number }, b: { center: Point; radius: number }): Point[] {
+  const d = distance(a.center, b.center)
+  if (d < EPS || d > a.radius + b.radius + EPS || d < Math.abs(a.radius - b.radius) - EPS) return []
+  const along = (a.radius ** 2 - b.radius ** 2 + d ** 2) / (2 * d)
+  const height = Math.sqrt(Math.max(0, a.radius ** 2 - along ** 2))
+  const ux = (b.center.x - a.center.x) / d, uy = (b.center.y - a.center.y) / d
+  const middle = { x: a.center.x + along * ux, y: a.center.y + along * uy }
+  const first = roundPoint({ x: middle.x - uy * height, y: middle.y + ux * height })
+  const second = roundPoint({ x: middle.x + uy * height, y: middle.y - ux * height })
+  return distance(first, second) < .001 ? [first] : [first, second]
+}
+/** Only pairs near the cursor are examined; large drawings avoid global all-pairs work. */
+export function nearestIntersection(pointer: Point, entities: CadEntity[], visibleLayers: Set<string>, tolerance: number): Snap | null {
+  const boundsNear = (entity: CadEntity): boolean => {
+    if (entity.kind === 'circle') return Math.abs(distance(pointer, entity.center) - entity.radius) <= tolerance
+    return entitySegments(entity).some(({ a, b }) => {
+      const minX = Math.min(a.x, b.x) - tolerance, maxX = Math.max(a.x, b.x) + tolerance
+      const minY = Math.min(a.y, b.y) - tolerance, maxY = Math.max(a.y, b.y) + tolerance
+      return pointer.x >= minX && pointer.x <= maxX && pointer.y >= minY && pointer.y <= maxY
+    })
+  }
+  const candidates = entities.filter(e => visibleLayers.has(e.layerId) && boundsNear(e))
+  let closest = tolerance
+  let nearest: Snap | null = null
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i], aSegments = entitySegments(a)
+    for (let j = i + 1; j < candidates.length; j++) {
+      const b = candidates[j], bSegments = entitySegments(b)
+      const points: Point[] = []
+      if (a.kind === 'circle' && b.kind === 'circle') points.push(...circleCircleIntersections(a, b))
+      else if (a.kind === 'circle') for (const seg of bSegments) points.push(...segmentCircleIntersections(seg, a.center, a.radius))
+      else if (b.kind === 'circle') for (const seg of aSegments) points.push(...segmentCircleIntersections(seg, b.center, b.radius))
+      else for (const sa of aSegments) for (const sb of bSegments) {
+        const hit = segmentIntersection(sa, sb)
+        if (hit) points.push(hit)
+      }
+      for (const p of points) {
+        const d = distance(pointer, p)
+        if (d < closest) { closest = d; nearest = { point: p, kind: '交點' } }
+      }
+    }
+  }
+  return nearest
 }

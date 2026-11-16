@@ -1,11 +1,12 @@
-import type { Point, Tool } from './types'
+import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
-const aliases: Record<string, Tool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel'> = {
   L: 'line', LINE: 'line', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
   U: 'undo', UNDO: 'undo', REDO: 'redo', E: 'delete', ERASE: 'delete', DEL: 'delete',
+  M: 'move', MOVE: 'move', CO: 'copy', COPY: 'copy', CP: 'copy', RO: 'rotate', ROTATE: 'rotate',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }
 export type CadCommand = (typeof aliases)[string]
