@@ -12,6 +12,7 @@ interface Props {
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
+  blockPreview: string | null; pointInputMode: boolean
 }
 
 const gridStep = (scale: number): number => {
@@ -42,7 +43,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entit
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -114,6 +115,13 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         ctx.setLineDash([])
       }
     }
+    if (blockPreview) {
+      ctx.strokeStyle = '#7bd9d0'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4])
+      const ghost = { id: 'preview', kind: 'insert' as const, blockId: blockPreview,
+        position: hover, rotation: 0, layerId: doc.activeLayerId }
+      for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h)
+      ctx.setLineDash([])
+    }
     if (draft?.points.length) {
       const layer = doc.layers.find(l => l.id === doc.activeLayerId)
       ctx.strokeStyle = layer?.color ?? '#ffffff'; ctx.lineWidth = 1.5
@@ -134,7 +142,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -172,7 +180,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     if (ev.button !== 0) return
     const point = effectivePoint(screen)
     setHover(point); onCursorChange(point)
-    if (edit) { onPoint(point); return }
+    if (edit || pointInputMode) { onPoint(point); return }
     if (tool === 'select') {
       let match: string | null = null, closest = 12 / camera.scale
       for (const entity of [...doc.entities].reverse()) {
