@@ -73,9 +73,11 @@ export function entityExtentPoints(entity:TextEntity|DimensionEntity,style:Dimen
     const geo=dimensionGeometry(entity,style)
     return [...geo.lines.flatMap(s=>[s.a,s.b]),geo.label.position]
   }
-  const width=[...entity.text].length*entity.height*.72
+  const lines=entity.text.split(String.fromCharCode(10))
+  const width=Math.max(...lines.map(line=>[...line].length*entity.height*.72))
   const a=entity.rotation*Math.PI/180
   const rotate=(x:number,y:number):Point=>({x:entity.position.x+x*Math.cos(a)-y*Math.sin(a),
     y:entity.position.y+x*Math.sin(a)+y*Math.cos(a)})
-  return [rotate(0,0),rotate(width,0),rotate(0,entity.height),rotate(width,entity.height)]
+  const lowest=-(lines.length-1)*entity.height*1.3-entity.height*.5
+  return [rotate(0,entity.height*.5),rotate(width,entity.height*.5),rotate(0,lowest),rotate(width,lowest)]
 }
