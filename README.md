@@ -1,10 +1,10 @@
 # WEB CAD — Drawing Studio
 
-React + TypeScript + Vite 的瀏覽器 2D CAD 實驗專案，朝室內設計施工圖與行動編修雙模式發展。
+React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v0.1.0 原型**。目前不是 AutoCAD 的正式替代品，不可直接以此版圖面進行施工放樣。
+> **v0.2.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
-## 開發與測試
+## 本機執行
 
 ```bash
 npm install --no-audit --no-fund
@@ -13,30 +13,42 @@ npm test
 npm run build
 ```
 
-支援 Node.js 20.19+ 或 22.12+。首次進入可點右側「載入示範平面圖」。
+支援 Node.js 20.19+ 或 22.12+；首次進入可以點右側「載入示範平面圖」。
 
-## 現有功能
+## 已支援
 
-- 2D Canvas、毫米世界座標、滾輪游標中心縮放、中鍵平移、全圖縮放
-- 直線 `L`、聚合線 `PL`（Enter 完成）、矩形 `REC`、圓 `C`
-- 絕對座標 `3000,1500`、相對座標 `@3000,0`、相對極座標 `@2000<45`、沿游標方向距離 `1500`
-- 圖層顏色、線粗、鎖定與顯示切換；物件端點、中點、圓心鎖點（F3）；正交（F8）
-- 選取物件、Delete / `E` 刪除、Ctrl+Z / Ctrl+Y 復原重做
-- 瀏覽器 localStorage 自動儲存、匯入／匯出 `.webcad.json`、示範室內平面圖
+- 毫米模型空間、Canvas 畫布、滾輪游標中心縮放、中鍵平移、全圖縮放
+- `L` 直線、`PL` 聚合線、`REC` 矩形、`C` 圓
+- 絕對 `3000,1500`、相對 `@3000,0`、極座標 `@2000<45`、方向距離 `1500` 輸入
+- 物件鎖點：端點／中點／圓心及**交點**（支援有限直線段、矩形、聚合線、圓的相交）
+- F3 鎖點、F8 正交，選取／刪除，Ctrl+Z／Ctrl+Y 復原／重做
+- **選取單一物件後**使用 `M` 移動、`CO` 複製、`RO` 旋轉，並可使用命令列輸入座標／角度
+- 圖層新增、改名、顏色、線粗、線型（Continuous/Dashed/Center）、顯示與鎖定
+- 選取物件後設定圖層、顏色、線粗、線型，支援 ByLayer 覆寫
+- localStorage 自動儲存、匯入／匯出 `.webcad.json`、可編輯的示範平面圖
 
-**尚未實作：** DWG、DXF、圖塊、尺寸標註、列印與 PDF、進階幾何修改、雲端同步、多物件選取。請勿將介面上的基本繪圖視為完整 AutoCAD 相容。
+目前僅有單一物件選取與變換；**尚未支援**多選、TRIM、OFFSET、DIM、BLOCK、DWG／DXF、列印與 PDF 比例出圖。螢幕線粗與線型並非實體出圖規格。
+
+### 操作範例
+
+1. 載入示範平面圖，選取一條家具線或矩形。
+2. 指令列輸入 `M` → Enter，再輸入 `0,0` → Enter，`@300,0` → Enter，即可移動 300 mm。
+3. 選取物件後輸入 `CO` → `0,0` → `@0,400` 可複製；輸入 `RO` → `0,0` → `90` 可旋轉 90°（逆時針）。
+4. 選取物件後於右方物件屬性面板更改圖層、顏色覆寫、線粗和線型，檢查 ByLayer。
+5. 用兩條交叉線驗證交點鎖點；按 F3 切換鎖點。
+6. 匯出圖面後重新匯入，檢查屬性值及座標是否保留。
 
 ### GitHub Pages
 
-1. 在 Repository 的 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
-2. Merge 經測試的 PR 到 `main`，`pages.yml` 會測試、建置並發布 `dist`。
-3. 完成部署後的網址預期為 `https://shinkureru.github.io/web-cad/`。
+1. Repository **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
+2. Merge PR 到 `main` 後由 `.github/workflows/pages.yml` 執行單元測試、TS 建置、部署 `dist`。
+3. 預期網址：<https://shinkureru.github.io/web-cad/>。
 
-## 專案文件
+## 文件
 
-- [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md)：目前架構、決策、限制、版本進度與後續工作
-- [`docs/CAD_ENGINE_EVALUATION.md`](docs/CAD_ENGINE_EVALUATION.md)：Cota 與自主繪圖核心的評估
+- [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — 交接、測試、限制及接續版本
+- [`docs/CAD_ENGINE_EVALUATION.md`](docs/CAD_ENGINE_EVALUATION.md) — Cota 評估與自製核心維護決策
 
-## 授權
+## 技術與授權
 
-目前新增的原型程式碼由本專案維護；尚未複製 Cota 的原始碼。若後續引入 Cota，必須保留 Apache-2.0 LICENSE、NOTICE 以及對應著作權聲明。
+目前所有原型繪圖碼均為本 Repo 自行實作，未複製 Cota 原始碼。若日後引入 Cota，必須依法保留 Apache-2.0 LICENSE、NOTICE 與著作權資訊。正式製圖前應另行驗證尺寸精度、字型及 DWG/DXF 往返。
