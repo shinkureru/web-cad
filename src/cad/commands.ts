@@ -1,13 +1,17 @@
 import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
-const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
   U: 'undo', UNDO: 'undo', REDO: 'redo', E: 'delete', ERASE: 'delete', DEL: 'delete',
   M: 'move', MOVE: 'move', CO: 'copy', COPY: 'copy', CP: 'copy', RO: 'rotate', ROTATE: 'rotate',
   B: 'block', BLOCK: 'block', I: 'insert', INSERT: 'insert', X: 'explode', EXPLODE: 'explode',
+  T: 'text', TEXT: 'text', DT: 'text', DTEXT: 'text',
+  DLI: 'linearDimension', DIMLINEAR: 'linearDimension',
+  DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
+  D: 'dimstyle', DIMSTYLE: 'dimstyle',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }
 export type CadCommand = (typeof aliases)[string]

@@ -8,6 +8,8 @@ export function translateEntity(entity: CadEntity, offset: Point): CadEntity {
     case 'polyline': return { ...entity, points: entity.points.map(move) }
     case 'circle': return { ...entity, center: move(entity.center) }
     case 'insert': return { ...entity, position: move(entity.position) }
+    case 'text': return { ...entity, position: move(entity.position) }
+    case 'dimension': return { ...entity, start: move(entity.start), end: move(entity.end), placement: move(entity.placement) }
   }
 }
 /** Positive angles are counter-clockwise. A rotated rectangle becomes a closed polyline. */
@@ -27,5 +29,17 @@ export function rotateEntity(entity: CadEntity, pivot: Point, degrees: number): 
     case 'polyline': return { ...entity, points: entity.points.map(spin) }
     case 'circle': return { ...entity, center: spin(entity.center) }
     case 'insert': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
+    case 'text': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
+    case 'dimension': {
+      // A linear horizontal/vertical dimension cannot remain axis-aligned after arbitrary rotation.
+      // Convert rotated non-quarter-turn dimensions into aligned dimensions.
+      const turn = ((degrees % 360) + 360) % 360
+      const quarterTurn = Math.abs(turn / 90 - Math.round(turn / 90)) < 1e-9
+      const swap = Math.round(turn / 90) % 2 !== 0
+      return { ...entity, start: spin(entity.start), end: spin(entity.end), placement: spin(entity.placement),
+        mode: entity.mode === 'linear' && !quarterTurn ? 'aligned' : entity.mode,
+        axis: entity.mode === 'linear' && quarterTurn && swap
+          ? (entity.axis === 'horizontal' ? 'vertical' : 'horizontal') : entity.axis }
+    }
   }
 }

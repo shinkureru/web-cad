@@ -1,4 +1,5 @@
 import type { Camera, CadEntity, Point, Snap } from './types'
+import { dimensionGeometry, getDimensionStyle } from './annotations'
 
 export const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y)
 export const roundPoint = (p: Point): Point => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 })
@@ -37,6 +38,8 @@ export function entitySnaps(entity: CadEntity): Snap[] {
     }
     case 'circle': return [{ point: entity.center, kind: '圓心' }]
     case 'insert': return [] // Caller expands block references using the document before snapping.
+    case 'text': return [{ point: entity.position, kind: '端點' }]
+    case 'dimension': return [{point:entity.start,kind:'端點'},{point:entity.end,kind:'端點'}]
   }
 }
 
@@ -73,6 +76,20 @@ export function hitTest(p: Point, entity: CadEntity): number {
     }
     case 'circle': return Math.abs(distance(p, entity.center) - entity.radius)
     case 'insert': return Infinity // Hit testing of inserts is on flattened primitives.
+    case 'text': {
+      // Approximate text hit testing in local text coordinates (font metrics depend on the browser).
+      const dx = p.x - entity.position.x, dy = p.y - entity.position.y
+      const a = entity.rotation * Math.PI / 180
+      const localX = dx * Math.cos(a) + dy * Math.sin(a)
+      const localY = -dx * Math.sin(a) + dy * Math.cos(a)
+      const width = Math.max(entity.height, [...entity.text].length * entity.height * .7)
+      return Math.hypot(Math.max(0,-localX,localX-width),Math.max(0,Math.abs(localY)-entity.height))
+    }
+    case 'dimension': {
+      const geom = dimensionGeometry(entity,getDimensionStyle())
+      return Math.min(...geom.lines.map(s => segmentDistance(p,s.a,s.b)),
+        distance(p,geom.label.position))
+    }
   }
 }
 
@@ -90,7 +107,8 @@ export function entitySegments(entity: CadEntity): Segment[] {
       const a = entity.start, b = entity.end
       return segments([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true)
     }
-    case 'circle': case 'insert': return []
+    case 'circle': case 'insert': case 'text': return []
+    case 'dimension': return [] // Dimensions do not generate drawing intersection snaps.
   }
 }
 const dot = (a: Point, b: Point): number => a.x * b.x + a.y * b.y

@@ -1,6 +1,6 @@
 import { rotateEntity, translateEntity } from './editing'
 import { roundPoint } from './geometry'
-import type { BlockDefinition, CadDocument, CadEntity, CadPrimitive, InsertEntity, Point } from './types'
+import type { BlockDefinition, CadDocument, CadEntity, CadDisplayEntity, CadPrimitive, InsertEntity, Point } from './types'
 
 /** A v0.3 block is a reusable set of primitive geometry; nested INSERT is not supported. */
 export function expandInsert(insert: InsertEntity, blocks: BlockDefinition[]): CadPrimitive[] {
@@ -16,10 +16,10 @@ export function expandInsert(insert: InsertEntity, blocks: BlockDefinition[]): C
       linetype: source.linetype && source.linetype !== 'ByLayer' ? source.linetype : insert.linetype }
   })
 }
-export function expandEntity(entity: CadEntity, doc: CadDocument): CadPrimitive[] {
+export function expandEntity(entity: CadEntity, doc: CadDocument): CadDisplayEntity[] {
   return entity.kind === 'insert' ? expandInsert(entity, doc.blocks ?? []) : [entity]
 }
-export function expandedDrawing(doc: CadDocument): CadPrimitive[] {
+export function expandedDrawing(doc: CadDocument): CadDisplayEntity[] {
   return doc.entities.flatMap(e => expandEntity(e, doc))
 }
 /** A block's local origin is the chosen base point; source ByLayer styles survive regrouping across layers. */
@@ -27,7 +27,7 @@ export function createBlockFromSelection(doc: CadDocument, ids: string[], name: 
   blockId: string, insertId: string): CadDocument {
   const idSet = new Set(ids)
   const selected = doc.entities.filter(e => idSet.has(e.id))
-  if (!selected.length || selected.length !== idSet.size || selected.some(e => e.kind === 'insert')) throw new Error('請選取至少一個基本圖元（不支援巢狀圖塊）')
+  if (!selected.length || selected.length !== idSet.size || selected.some(e => !['line','polyline','rectangle','circle'].includes(e.kind))) throw new Error('請選取至少一個基本圖元（不支援巢狀圖塊）')
   if (!name.trim() || (doc.blocks ?? []).some(b => b.name.toLowerCase() === name.trim().toLowerCase())) throw new Error('圖塊名稱不可空白或重複')
   for (const entity of selected) {
     const layer = doc.layers.find(l => l.id === entity.layerId)

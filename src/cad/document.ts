@@ -1,4 +1,6 @@
-import type { BlockDefinition, CadDocument, CadEntity, CadLayer, Point } from './types'
+import type { BlockDefinition, CadDocument, CadEntity, CadLayer, DimensionStyle, Point } from './types'
+
+import { DEFAULT_DIMENSION_STYLES } from './annotations'
 
 export const STORAGE_KEY = 'web-cad:v1:document'
 export const uid = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -6,6 +8,7 @@ export const uid = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.no
 export function createDocument(): CadDocument {
   return {
     version: 1, name: '未命名圖面', unit: 'mm', activeLayerId: '0', entities: [], blocks: [],
+    dimensionStyles: DEFAULT_DIMENSION_STYLES.map(s => ({ ...s })), activeDimensionStyleId: 'standard',
     layers: [
       { id: '0', name: '0', color: '#e7edf3', lineweight: 0.25, visible: true, locked: false },
       { id: 'wall', name: '牆體', color: '#f19c81', lineweight: 0.5, visible: true, locked: false },
@@ -40,8 +43,26 @@ function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
     case 'circle': return isPoint(e.center) && Number.isFinite(e.radius) && e.radius > 0
     case 'insert': return typeof e.blockId === 'string' && isPoint(e.position)
       && Number.isFinite(e.rotation)
+    case 'text': return isPoint(e.position) && typeof e.text === 'string'
+      && e.text.length > 0 && e.text.length <= 2048
+      && Number.isFinite(e.height) && e.height > 0 && e.height <= 10000
+      && Number.isFinite(e.rotation)
+    case 'dimension': return isPoint(e.start) && isPoint(e.end) && isPoint(e.placement)
+      && (e.start.x !== e.end.x || e.start.y !== e.end.y)
+      && ['linear','aligned'].includes(e.mode) && ['horizontal','vertical'].includes(e.axis)
+      && typeof e.styleId === 'string'
     default: return false
   }
+}
+function isDimensionStyle(value: unknown): value is DimensionStyle {
+  if (!value || typeof value !== 'object') return false
+  const s = value as DimensionStyle
+  return typeof s.id === 'string' && s.id.length > 0
+    && typeof s.name === 'string' && s.name.trim().length > 0 && s.name.length <= 60
+    && [s.textHeight,s.arrowSize,s.textGap,s.extensionGap,s.extensionBeyond].every(n => Number.isFinite(n) && n >= 0 && n <= 10000)
+    && s.textHeight > 0 && s.arrowSize > 0
+    && Number.isInteger(s.precision) && s.precision >= 0 && s.precision <= 3
+    && typeof s.suffix === 'string' && s.suffix.length <= 16
 }
 function isBlock(value: unknown, layers: Set<string>): value is BlockDefinition {
   if (!value || typeof value !== 'object') return false
@@ -49,7 +70,7 @@ function isBlock(value: unknown, layers: Set<string>): value is BlockDefinition 
   return typeof block.id === 'string' && block.id.length > 0
     && typeof block.name === 'string' && block.name.trim().length > 0
     && Array.isArray(block.entities) && block.entities.length > 0
-    && block.entities.every(e => (e as CadEntity).kind !== 'insert' && isEntity(e, layers))
+    && block.entities.every(e => ['line','polyline','rectangle','circle'].includes((e as CadEntity).kind) && isEntity(e, layers))
 }
 /** Strict validation of the prototype's native JSON format. Never render unknown schema entities. */
 export function parseDocument(input: unknown): CadDocument {
@@ -72,6 +93,13 @@ export function parseDocument(input: unknown): CadDocument {
     || new Set(d.entities.map(e => e.id)).size !== d.entities.length
     || d.entities.some(e => e.kind === 'insert' && !blockIds.has(e.blockId))) {
     throw new Error('圖塊參照或圖元 ID 無效')
+  }
+  const styles = d.dimensionStyles ?? DEFAULT_DIMENSION_STYLES
+  if (!Array.isArray(styles) || !styles.length || styles.length > 50 || !styles.every(isDimensionStyle)
+    || new Set(styles.map(s => s.id)).size !== styles.length
+    || (d.activeDimensionStyleId !== undefined && !styles.some(s => s.id === d.activeDimensionStyleId))
+    || d.entities.some(e => e.kind === 'dimension' && !styles.some(s => s.id === e.styleId))) {
+    throw new Error('標註樣式或關聯無效')
   }
   return d as CadDocument
 }
