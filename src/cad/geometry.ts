@@ -82,8 +82,11 @@ export function hitTest(p: Point, entity: CadEntity): number {
       const a = entity.rotation * Math.PI / 180
       const localX = dx * Math.cos(a) + dy * Math.sin(a)
       const localY = -dx * Math.sin(a) + dy * Math.cos(a)
-      const width = Math.max(entity.height, [...entity.text].length * entity.height * .7)
-      return Math.hypot(Math.max(0,-localX,localX-width),Math.max(0,Math.abs(localY)-entity.height))
+      const lines = entity.text.split(String.fromCharCode(10))
+      const width = Math.max(entity.height, ...lines.map(line => [...line].length * entity.height * .7))
+      const minY = -(lines.length - 1) * entity.height * 1.3 - entity.height * .5
+      const maxY = entity.height * .5
+      return Math.hypot(Math.max(0,-localX,localX-width),Math.max(0,minY-localY,localY-maxY))
     }
     case 'dimension': {
       const geom = dimensionGeometry(entity,getDimensionStyle())
