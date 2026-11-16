@@ -3,6 +3,7 @@ import type React from 'react'
 import type { CadDocument, Camera, Draft, EditTool, Point, Snap, Tool } from '../cad/types'
 import { distance, hitTest, nearestSnap, orthoPoint, roundPoint, toScreen, toWorld, zoomAt } from '../cad/geometry'
 import { rotateEntity, translateEntity } from '../cad/editing'
+import { wallOutline } from '../cad/walls'
 import { expandEntity, expandedDrawing } from '../cad/blocks'
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
-  blockPreview: string | null; pointInputMode: boolean
+  blockPreview: string | null; pointInputMode: boolean; wallThickness: number
 }
 
 const gridStep = (scale: number): number => {
@@ -43,7 +44,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entit
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -127,7 +128,10 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = layer?.color ?? '#ffffff'; ctx.lineWidth = 1.5
       ctx.setLineDash([6, 5])
       const points = draft.points
-      if (draft.tool === 'circle') {
+      if (draft.tool === 'wall' && distance(points[0], hover) > .001) {
+        drawEntity(ctx, { id: 'draft', kind: 'polyline', layerId: doc.activeLayerId,
+          points: wallOutline(points[0], hover, wallThickness) }, camera, w, h)
+      } else if (draft.tool === 'circle') {
         drawEntity(ctx, { id: 'draft', kind: 'circle', layerId: doc.activeLayerId, center: points[0], radius: distance(points[0], hover) }, camera, w, h)
       } else if (draft.tool === 'rectangle') {
         drawEntity(ctx, { id: 'draft', kind: 'rectangle', layerId: doc.activeLayerId, start: points[0], end: hover }, camera, w, h)
@@ -142,7 +146,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
