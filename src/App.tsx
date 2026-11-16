@@ -58,6 +58,13 @@ function sampleDocument(): CadDocument {
     { id: uid(), kind: 'rectangle', layerId: 'furniture', start: p(4000, 3000), end: p(5400, 3850) },
     { id: uid(), kind: 'rectangle', layerId: 'furniture', start: p(4200, 550), end: p(5400, 1700) },
   ]
+  d.entities.push(
+    {id:uid(),kind:'text',layerId:'0',text:'客廳｜LIVING ROOM',position:p(3900,2150),height:135,rotation:0},
+    {id:uid(),kind:'dimension',layerId:'dimension',start:p(0,0),end:p(6000,0),
+      placement:p(3000,-550),mode:'linear',axis:'horizontal',styleId:'standard'},
+    {id:uid(),kind:'dimension',layerId:'dimension',start:p(6000,0),end:p(6000,4200),
+      placement:p(6550,2100),mode:'linear',axis:'vertical',styleId:'standard'},
+  )
   d.activeLayerId = 'wall'
   return d
 }
@@ -119,7 +126,7 @@ export default function App() {
   }
   function startBlockCreation() {
     const chosen = doc.entities.filter(e => selectedIds.includes(e.id))
-    if (!chosen.length || chosen.some(e => e.kind === 'insert'
+    if (!chosen.length || chosen.some(e => !['line','polyline','rectangle','circle'].includes(e.kind)
       || !doc.layers.find(l => l.id === e.layerId)?.visible
       || doc.layers.find(l => l.id === e.layerId)?.locked)) {
       showNotice('請 Shift+點選一個或多個未鎖定的基本圖元；目前不支援巢狀圖塊。'); return
@@ -478,7 +485,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} cursor={cursor} onCursorChange={setCursor} onPoint={p => annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation} annotation={annotation} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation} annotation={annotation} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
         <section className="command-area" aria-label="CAD 指令列">
@@ -595,7 +602,7 @@ export default function App() {
             onChange={e=>{const n=Number(e.target.value);if(n>0&&n<=10000)setNewTextHeight(n)}}/></label>
           <p>標註尺寸由幾何座標計算，標註樣式變更會套用至共用此樣式的尺寸。</p>
         </div>
-        <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
+        <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setAnnotation(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
       </aside>}
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
