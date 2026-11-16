@@ -2,7 +2,7 @@ import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
 const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode'> = {
-  L: 'line', LINE: 'line', PL: 'polyline', PLINE: 'polyline',
+  L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
   U: 'undo', UNDO: 'undo', REDO: 'redo', E: 'delete', ERASE: 'delete', DEL: 'delete',
