@@ -1,0 +1,34 @@
+name: Cota upstream feasibility (manual)
+on:
+  workflow_dispatch:
+jobs:
+  build-cota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned upstream Cota
+        uses: actions/checkout@v4
+        with:
+          repository: mxchristian17/cota
+          ref: f6731b3d55561269b912484ee7915606334b1924
+          path: upstream
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Cota web dependencies
+        working-directory: upstream/services/web
+        run: npm ci --no-audit --no-fund
+      - name: Build Cota static web under /web-cad/
+        working-directory: upstream/services/web
+        env:
+          VITE_CLOUD: 'off'
+          COTA_BASE: /web-cad/
+        run: npm run build
+      - name: Report bundle footprint
+        run: du -sh upstream/services/web/dist
+      - name: Upload build for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: cota-pinned-static-build
+          path: upstream/services/web/dist/
+          retention-days: 3
