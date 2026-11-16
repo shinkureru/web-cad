@@ -10,7 +10,7 @@ import { findCommand, parsePointInput } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
-import { BUILTIN_BLOCKS, createBlockFromSelection, expandEntity, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
+import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
 import type { LibraryPreset } from './cad/blocks'
 import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType } from './cad/types'
 
