@@ -39,6 +39,12 @@
 - 本機 localStorage 非完整工程檔版本管理，需定期匯出 JSON 備份；尚未完成 E2E、正式施工圖驗收與 DWG/DXF/PDF 格式相容。
 - 圖塊內局部物件不直接受其原始圖層的顯示／鎖定控制，參照整體受插入圖層控制。
 
+## Cota 靜態建置驗證流程
+
+- `.github/workflows/cota-poc.yml` 可由 GitHub Actions 手動選擇 **Cota upstream feasibility (manual)** 執行。
+- 以 pinned upstream commit `f6731b3d55561269b912484ee7915606334b1924` 建置 GitHub Pages 子路徑，預期會在成功時產生 artifact；不修改此 Repo 的 main 或部署網站。
+- **尚未手動執行**。此流程只測試 upstream 靜態建置，不代表 Cota 已導入或 DXF/DWG 相容性合格。
+
 ## Cota 評估
 
 保留 Cota 當作大型正式 CAD 核心候選，本 PR 只建立原生單層圖塊與必要的幾何驗證；**沒有 Fork、嵌入或聲稱 Cota 上游已通過部署／格式往返測試**。若未來導入，先獨立驗證 Pages base、繁體中文標註、BLOCK/INSERT/DIMENSION 及 DXF/DWG 開啟與存檔，保留 Apache-2.0 LICENSE／NOTICE。詳細請見 `docs/CAD_ENGINE_EVALUATION.md`。
