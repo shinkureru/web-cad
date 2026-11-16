@@ -49,7 +49,7 @@ function isBlock(value: unknown, layers: Set<string>): value is BlockDefinition 
   return typeof block.id === 'string' && block.id.length > 0
     && typeof block.name === 'string' && block.name.trim().length > 0
     && Array.isArray(block.entities) && block.entities.length > 0
-    && block.entities.every(e => isEntity(e, layers) && e.kind !== 'insert')
+    && block.entities.every(e => (e as CadEntity).kind !== 'insert' && isEntity(e, layers))
 }
 /** Strict validation of the prototype's native JSON format. Never render unknown schema entities. */
 export function parseDocument(input: unknown): CadDocument {
