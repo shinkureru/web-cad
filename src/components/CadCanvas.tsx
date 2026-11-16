@@ -57,6 +57,14 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
       arrow.forEach((v,i)=>{const p=toScreen(v,camera,w,h); if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)})
       ctx.closePath();ctx.fillStyle=ctx.strokeStyle;ctx.fill()
     }
+    // Cut a readable text gap over the dimension line without changing model geometry.
+    const label=geo.label
+    const screen=toScreen(label.position,camera,w,h)
+    const px=Math.max(.2,label.height*camera.scale)
+    ctx.save();ctx.translate(screen.x,screen.y);ctx.rotate(-label.rotation*Math.PI/180)
+    ctx.font=`${px}px ${FONT}`;const labelWidth=ctx.measureText(label.text).width
+    ctx.fillStyle='#101317';ctx.fillRect(-labelWidth/2-4,-px*.72,labelWidth+8,px*1.44)
+    ctx.restore()
     drawLabel(ctx,geo.label.text,geo.label.position,geo.label.height,geo.label.rotation,camera,w,h)
     return
   }
