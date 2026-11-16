@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
-  ArrowDownToLine, Circle, Command, CornerDownLeft, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
+  ArrowDownToLine, Box, Circle, Command, CornerDownLeft, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
   HelpCircle, Layers3, LockKeyhole, Minus, MousePointer2, PanelRightClose, PanelRightOpen,
   PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2,
   UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut,
@@ -10,6 +10,8 @@ import { findCommand, parsePointInput } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
+import { BUILTIN_BLOCKS, createBlockFromSelection, expandEntity, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
+import type { LibraryPreset } from './cad/blocks'
 import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType } from './cad/types'
 
 const editTools: { id: EditTool; label: string; alias: string; Icon: typeof Minus }[] = [
@@ -76,11 +78,15 @@ export default function App() {
   const [edit, setEdit] = useState<{ kind: EditTool; base: Point | null } | null>(null)
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [blockCreate, setBlockCreate] = useState<{ ids: string[]; name: string | null } | null>(null)
+  const [blockInsert, setBlockInsert] = useState<{ blockId: string } | null>(null)
+  const [activeBlockId, setActiveBlockId] = useState<string>('')
   const [grid, setGrid] = useState(true)
   const [osnap, setOsnap] = useState(true)
   const [ortho, setOrtho] = useState(false)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.2.0 已啟動。輸入 L / PL 或選取物件後輸入 M / CO / RO。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.3.0 已啟動。Shift+點選多物件後輸入 B 建立圖塊；I 插入、X 分解。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -98,8 +104,74 @@ export default function App() {
   }, [notice])
 
   function editDoc(update: (current: CadDocument) => CadDocument) { dispatch({ type: 'edit', update }) }
+  function selectSingle(id: string | null) { setSelectedId(id); setSelectedIds(id ? [id] : []) }
+  function selectOnCanvas(id: string | null, extend: boolean) {
+    if (!extend) { selectSingle(id); return }
+    if (!id) return
+    const next = selectedIds.includes(id) ? selectedIds.filter(item => item !== id) : [...selectedIds, id]
+    setSelectedIds(next); setSelectedId(next.at(-1) ?? null)
+  }
+  function startBlockCreation() {
+    const chosen = doc.entities.filter(e => selectedIds.includes(e.id))
+    if (!chosen.length || chosen.some(e => e.kind === 'insert'
+      || !doc.layers.find(l => l.id === e.layerId)?.visible
+      || doc.layers.find(l => l.id === e.layerId)?.locked)) {
+      showNotice('請 Shift+點選一個或多個未鎖定的基本圖元；目前不支援巢狀圖塊。'); return
+    }
+    setTool('select'); setDraft(null); setEdit(null); setBlockInsert(null)
+    setBlockCreate({ ids: chosen.map(e => e.id), name: null })
+    logMessage('BLOCK：請輸入圖塊名稱，再指定基準點（mm）。')
+    inputRef.current?.focus()
+  }
+  function finishBlockCreation(base: Point) {
+    if (!blockCreate?.name) return
+    try {
+      const blockId = uid(), insertId = uid()
+      const next = createBlockFromSelection(doc, blockCreate.ids, blockCreate.name, base, blockId, insertId)
+      editDoc(() => next)
+      setActiveBlockId(blockId); selectSingle(insertId); setBlockCreate(null)
+      logMessage(`已建立圖塊「${blockCreate.name}」，包含 ${blockCreate.ids.length} 個圖元。`)
+    } catch (error) { showNotice(error instanceof Error ? error.message : '建立圖塊失敗') }
+  }
+  function beginInsert(blockId = activeBlockId) {
+    const block = (doc.blocks ?? []).find(b => b.id === blockId) ?? (doc.blocks ?? [])[0]
+    const layer = doc.layers.find(l => l.id === doc.activeLayerId)
+    if (!block) { showNotice('請先從預設圖塊庫加入圖塊，或使用 B 建立圖塊。'); return }
+    if (!layer?.visible || layer.locked) { showNotice('請切換到顯示且未鎖定的圖層。'); return }
+    setActiveBlockId(block.id); setTool('select'); setEdit(null); setDraft(null); setBlockCreate(null)
+    setBlockInsert({ blockId: block.id }); logMessage(`INSERT：指定「${block.name}」的插入點（mm）。`)
+    inputRef.current?.focus()
+  }
+  function placePreset(preset: LibraryPreset) {
+    const layer = doc.layers.find(l => l.id === doc.activeLayerId)
+    if (!layer?.visible || layer.locked) { showNotice('請先切換到可編輯圖層。'); return }
+    editDoc(current => installPreset(current, preset))
+    setActiveBlockId(preset.id); setTool('select'); setDraft(null); setEdit(null); setBlockCreate(null)
+    setBlockInsert({ blockId: preset.id }); logMessage(`插入預設「${preset.name}」：指定插入點。`)
+    inputRef.current?.focus()
+  }
+  function finishInsert(point: Point) {
+    if (!blockInsert) return
+    const layer = doc.layers.find(l => l.id === doc.activeLayerId)
+    if (!layer?.visible || layer.locked || !(doc.blocks ?? []).some(b => b.id === blockInsert.blockId)) {
+      showNotice('圖塊或目前圖層不可用。'); setBlockInsert(null); return
+    }
+    const insertId = uid(), blockId = blockInsert.blockId
+    editDoc(current => ({ ...current, entities: [...current.entities, {
+      id: insertId, kind: 'insert' as const, blockId, position: point, rotation: 0, layerId: current.activeLayerId
+    }] }))
+    setBlockInsert(null); selectSingle(insertId); logMessage('圖塊已插入。再次輸入 I 可重複插入。')
+  }
+  function explodeSelected() {
+    if (!selectedId) { showNotice('請先選取圖塊參照。'); return }
+    try {
+      const next = explodeInsert(doc, selectedId, uid)
+      editDoc(() => next); selectSingle(null); setEdit(null)
+      logMessage('EXPLODE：已分解圖塊，圖塊定義仍保留在圖庫。')
+    } catch (error) { showNotice(error instanceof Error ? error.message : '無法分解此圖塊') }
+  }
   function startTool(next: Tool) {
-    setTool(next); setDraft(null); setEdit(null); setSelectedId(null)
+    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); selectSingle(null)
     if (next !== 'select') lastTool.current = next
     logMessage(next === 'select' ? '選取物件，按 Delete 刪除。' : `${tools.find(t => t.id === next)?.label}：指定第一點。`)
   }
@@ -109,7 +181,7 @@ export default function App() {
     if (!entity || !sourceLayer?.visible || sourceLayer.locked) {
       showNotice('請先選取可編輯的物件（圖層須顯示且未鎖定）。'); return
     }
-    setTool('select'); setDraft(null)
+    setTool('select'); setDraft(null); setBlockCreate(null); setBlockInsert(null)
     setEdit({ kind, base: null })
     logMessage(`${editTools.find(t => t.id === kind)?.label}：指定基準點。`)
   }
@@ -129,7 +201,7 @@ export default function App() {
     if (edit.kind === 'copy') {
       const clone = { ...result, id: uid() }
       editDoc(current => ({ ...current, entities: [...current.entities, clone] }))
-      setSelectedId(clone.id)
+      selectSingle(clone.id)
     } else editDoc(current => ({ ...current, entities: current.entities.map(e => e.id === source.id ? result : e) }))
     setEdit(null)
     logMessage(`${editTools.find(t => t.id === edit.kind)?.label}完成。`)
@@ -176,12 +248,12 @@ export default function App() {
     const sourceLayer = source && doc.layers.find(l => l.id === source.layerId)
     if (!sourceLayer?.visible || sourceLayer.locked) { showNotice('此物件所在圖層無法編輯。'); return }
     editDoc(current => ({ ...current, entities: current.entities.filter(e => e.id !== selectedId) }))
-    setSelectedId(null); logMessage('已刪除所選物件。')
+    selectSingle(null); logMessage('已刪除所選物件。')
   }
   function fitView() {
     if (!doc.entities.length) { setCamera({ x: 0, y: 0, scale: .2 }); return }
     const p: Point[] = []
-    doc.entities.forEach(e => {
+    expandedDrawing(doc).forEach(e => {
       if (!doc.layers.find(l => l.id === e.layerId)?.visible) return
       if (e.kind === 'line' || e.kind === 'rectangle') p.push(e.start, e.end)
       else if (e.kind === 'polyline') p.push(...e.points)
@@ -196,6 +268,25 @@ export default function App() {
   }
   const runCommand = (text: string) => {
     const raw = text.trim()
+    if (blockCreate) {
+      if (findCommand(raw) === 'cancel') { setBlockCreate(null); return }
+      if (!blockCreate.name) {
+        if (!raw || raw.length > 60 || (doc.blocks ?? []).some(b => b.name.toLowerCase() === raw.toLowerCase())) {
+          showNotice('請輸入 1–60 字、不與現有圖塊重複的名稱。'); return
+        }
+        setBlockCreate({ ...blockCreate, name: raw }); logMessage('指定圖塊基準點：滑鼠點選或輸入 X,Y。')
+        return
+      }
+      const point = parsePointInput(raw, null, cursor)
+      if (point) { finishBlockCreation(point); return }
+      showNotice('請輸入有效的絕對座標，例如 0,0，或在畫布上點選。'); return
+    }
+    if (blockInsert) {
+      if (findCommand(raw) === 'cancel') { setBlockInsert(null); return }
+      const point = parsePointInput(raw, null, cursor)
+      if (point) { finishInsert(point); return }
+      showNotice('請輸入絕對座標 X,Y 或在畫布上點選插入點。'); return
+    }
     if (edit) {
       if (!raw) { showNotice('請指定基準點、下一點或旋轉角度。'); return }
       if (edit.base && edit.kind === 'rotate' && /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) { finishEdit(edit.base, Number(raw)); return }
@@ -215,12 +306,15 @@ export default function App() {
     const command = findCommand(raw)
     if (!command) { showNotice(`未知指令／座標：${raw}`); return }
     switch (command) {
-      case 'undo': dispatch({ type: 'undo' }); setDraft(null); setSelectedId(null); return
-      case 'redo': dispatch({ type: 'redo' }); setDraft(null); setSelectedId(null); return
+      case 'undo': dispatch({ type: 'undo' }); setDraft(null); selectSingle(null); return
+      case 'redo': dispatch({ type: 'redo' }); setDraft(null); selectSingle(null); return
       case 'delete': deleteSelected(); return
       case 'save': downloadDocument(doc); return
       case 'fit': fitView(); return
       case 'cancel': setDraft(null); setEdit(null); startTool('select'); return
+      case 'block': startBlockCreation(); return
+      case 'insert': beginInsert(); return
+      case 'explode': explodeSelected(); return
       case 'move': case 'copy': case 'rotate': startEdit(command); return
       default: startTool(command)
     }
@@ -236,7 +330,7 @@ export default function App() {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') {
         ev.preventDefault(); dispatch({ type: 'redo' }); setDraft(null); return
       }
-      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setTool('select'); setSelectedId(null); logMessage('已取消操作。'); return }
+      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
       if (ev.key === 'F3') { ev.preventDefault(); setOsnap(old => !old); return }
       if (ev.key === 'F8') { ev.preventDefault(); setOrtho(old => !old); return }
       if (!editing && ev.key === 'Delete') { ev.preventDefault(); deleteSelected(); return }
@@ -253,7 +347,7 @@ export default function App() {
     if (file.size > 10 * 1024 * 1024) { showNotice('本版僅接受 10 MB 以下的原生 JSON 圖面。'); return }
     try {
       const parsed = parseDocument(JSON.parse(await file.text()) as unknown)
-      dispatch({ type: 'replace', document: parsed }); setDraft(null); setEdit(null); setSelectedId(null); startTool('select')
+      dispatch({ type: 'replace', document: parsed }); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setActiveBlockId(''); selectSingle(null); startTool('select')
       showNotice(`已開啟：${parsed.name}`)
     } catch (error) { showNotice(error instanceof Error ? error.message : '無法開啟此檔案') }
   }
@@ -266,7 +360,7 @@ export default function App() {
   const selectedEntity = doc.entities.find(e => e.id === selectedId)
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
-  const title = edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，按 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C）'
+  const title = blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按 Enter' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，按 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C）'
 
   return <div className="app">
     <header className="app-header">
@@ -274,19 +368,23 @@ export default function App() {
       <div className="header-divider"/>
       <div className="document-name"><span className="doc-prefix">目前圖面 / </span><input aria-label="圖面名稱" value={doc.name} onChange={e => editDoc(d => ({...d, name: e.target.value}))}/><span className="unsaved-tag">本機自動儲存</span></div>
       <div className="header-actions">
-        <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); setSelectedId(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
+        <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
         <button title="開啟原生圖面 JSON" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
         <button className="header-primary" title="匯出 JSON 圖面" onClick={() => downloadDocument(doc)}><Save size={16}/><span>儲存圖面</span></button>
         <input ref={fileRef} type="file" accept=".json,.webcad.json,application/json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.2.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.3.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
         {tools.map(({ id, Icon, label, alias }) => <button key={id} className={`rail-tool ${tool === id ? 'is-active' : ''}`} title={`${label} (${alias})`} aria-label={label} onClick={() => startTool(id)}><Icon size={20}/><span>{label}</span></button>)}
         <div className="rail-separator"/>
         {editTools.map(({ id, Icon, label, alias }) => <button key={id} className={`rail-tool ${edit?.kind === id ? 'is-active' : ''}`} title={`${label} (${alias})；先選取物件`} aria-label={label} disabled={!selectedEntity || !selectedLayer?.visible || selectedLayer.locked} onClick={() => startEdit(id)}><Icon size={20}/><span>{label}</span></button>)}
+        <div className="rail-separator"/>
+        <button className="rail-tool" title="B / BLOCK — 將 Shift 多選圖元建立成圖塊" disabled={!selectedIds.length} onClick={startBlockCreation}><Box size={20}/><span>建立圖塊</span></button>
+        <button className="rail-tool" title="I / INSERT — 插入圖塊" onClick={() => beginInsert()}><Copy size={20}/><span>插入圖塊</span></button>
+        <button className="rail-tool" title="X / EXPLODE — 分解所選圖塊" disabled={selectedEntity?.kind !== 'insert'} onClick={explodeSelected}><Layers3 size={20}/><span>分解圖塊</span></button>
         <div className="rail-separator"/>
         <button className="rail-tool" title="刪除選取物件（Delete）" onClick={deleteSelected}><Trash2 size={20}/><span>刪除</span></button>
         <div className="rail-fill"/>
@@ -302,7 +400,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} cursor={cursor} onCursorChange={setCursor} onPoint={p => edit ? finishEdit(p) : addPoint(p)} onSelect={setSelectedId} edit={edit} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} cursor={cursor} onCursorChange={setCursor} onPoint={p => blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
         <section className="command-area" aria-label="CAD 指令列">
@@ -332,8 +430,15 @@ export default function App() {
         <div className="panel-divider"/>
         <div className="panel-section-heading"><span><MousePointer2 size={17}/> 物件資訊</span></div>
         <div className="info-block">{selectedEntity ? <>
-          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形' } as Record<string, string>)[selectedEntity.kind]}</p>
+          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', insert: '圖塊參照' } as Record<string, string>)[selectedEntity.kind]}</p>
           <p>ID　{selectedEntity.id.slice(0, 8)}　{selectedLayer?.locked ? '（已鎖定）' : ''}</p>
+          {selectedEntity.kind === 'insert' && <>
+            <p>圖塊　{(doc.blocks ?? []).find(b => b.id === selectedEntity.blockId)?.name ?? '找不到定義'}</p>
+            <label className="block-angle">角度（度）<input type="number" step="15" value={selectedEntity.rotation}
+              disabled={selectedLayer?.locked || !selectedLayer?.visible}
+              onChange={e => { const a = Number(e.target.value); if (!Number.isFinite(a)) return
+                editDoc(d => ({ ...d, entities: d.entities.map(item => item.id === selectedEntity.id && item.kind === 'insert' ? { ...item, rotation: a } : item) })) }}/></label>
+          </>}
           <div className="entity-properties">
             <label>物件圖層<select aria-label="物件圖層" value={selectedEntity.layerId} disabled={selectedLayer?.locked} onChange={e => editSelectedEntity({ layerId: e.target.value })}>{doc.layers.map(l => <option key={l.id} value={l.id} disabled={!l.visible || l.locked}>{l.name}</option>)}</select></label>
             <label>物件顏色<select aria-label="物件顏色模式" value={selectedEntity.color && selectedEntity.color !== 'ByLayer' ? 'custom' : 'ByLayer'} disabled={selectedLayer?.locked} onChange={e => editSelectedEntity({ color: e.target.value === 'ByLayer' ? 'ByLayer' : selectedLayer?.color ?? '#ffffff' })}><option value="ByLayer">ByLayer — 依圖層</option><option value="custom">指定顏色</option></select></label>
@@ -343,15 +448,38 @@ export default function App() {
           </div>
           <button className="delete-action" disabled={selectedLayer?.locked} onClick={deleteSelected}><Trash2 size={14}/> 刪除所選物件</button>
           </> : <p>尚未選取物件。<br/>使用左側選取工具點擊圖形。</p>}</div>
-        <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); setSelectedId(null); setDraft(null); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
+        <div className="panel-divider"/>
+        <div className="panel-section-heading"><span><Box size={17}/> 室內設計圖塊庫</span></div>
+        <div className="block-library">
+          <p>Shift+點選多個圖元 · 已選 {selectedIds.length} 個</p>
+          <button className="block-action" disabled={!selectedIds.length} onClick={startBlockCreation}>B — 將所選圖元建立圖塊</button>
+          <label>目前圖面圖塊
+            <select aria-label="選擇圖塊" value={(doc.blocks ?? []).some(b => b.id === activeBlockId) ? activeBlockId : (doc.blocks ?? [])[0]?.id ?? ''}
+              onChange={e => setActiveBlockId(e.target.value)}>
+              {!(doc.blocks ?? []).length && <option value="">尚未建立圖塊</option>}
+              {(doc.blocks ?? []).map(b => <option key={b.id} value={b.id}>{b.name}（{b.entities.length} 件）</option>)}
+            </select>
+          </label>
+          <button className="block-action" disabled={!(doc.blocks ?? []).length} onClick={() => beginInsert()}>I — 插入選擇的圖塊</button>
+          {selectedEntity?.kind === 'insert' && <button className="block-action" onClick={explodeSelected}>X — 分解所選圖塊</button>}
+          <div className="block-preset-title">預設平面圖塊（單位 mm）</div>
+          {BUILTIN_BLOCKS.map(preset => <div className="block-preset" key={preset.id}>
+            <div><strong>{preset.name}</strong><small>{preset.category}</small></div>
+            <button title={`插入 ${preset.name}`} onClick={() => placePreset(preset)}>插入</button>
+          </div>)}
+          <p>預設符號僅為簡化示意，實際門型與家具尺寸請依施工規格調整。</p>
+        </div>
+        <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
       </aside>}
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.2.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.3.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['L / LINE', '直線'], ['PL / PLINE', '聚合線（Enter 完成）'], ['REC / RECTANG', '矩形'], ['C / CIRCLE', '圓形'],
+      ['B / BLOCK', 'Shift+點選多個基本圖元 → 輸入名稱 → 指定基準點'], ['I / INSERT', '插入圖面圖塊庫中的圖塊'], ['X / EXPLODE', '分解已選取圖塊參照'],
+      ['Shift+點選', '加入或移除多重選取（B 建立圖塊）'],
       ['M / MOVE', '移動所選物件：基準點 → 目標點'], ['CO / COPY', '複製所選物件：基準點 → 目標點'], ['RO / ROTATE', '旋轉所選物件：中心點 → 角度（度）'], ['E / ERASE', '刪除已選取物件'], ['U / UNDO', '復原'], ['REDO', '重做'], ['Z / ZOOM', '縮放至全圖'], ['SAVE', '匯出原生 JSON'],
       ['100,200', '絕對座標 (mm)'], ['@3000,0', '相對座標 (mm)'], ['@1000<90', '相對極座標'], ['1500', '從上一點沿游標方向指定距離'],
       ['交點鎖點', '線段／聚合線／矩形／圓的有限交點'], ['F3', '切換物件鎖點'], ['F8', '切換正交'], ['Esc', '取消操作'], ['中鍵拖曳', '平移畫布'], ['滾輪', '游標處縮放'], ['Ctrl+Z / Ctrl+Y', '復原／重做'],
-    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。僅支援原生 .webcad.json；DWG、DXF、圖塊、尺寸標註與施工圖出圖仍在後續規劃中。</p></div></div>}
+    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。僅支援原生 .webcad.json；DWG、DXF、尺寸標註與施工圖出圖仍在後續規劃中；本版圖塊僅支援一層參照、無巢狀及動態圖塊。</p></div></div>}
   </div>
 }
