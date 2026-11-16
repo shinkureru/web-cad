@@ -65,6 +65,7 @@ export function documentReducer(state: History, action: DocAction): History {
     if (!state.future.length) return state
     return { past: [...state.past, state.present].slice(-100), present: state.future[0], future: state.future.slice(1) }
   }
+  if (action.type !== 'edit') return state
   const next = action.update(state.present)
   if (next === state.present) return state
   return { past: [...state.past, state.present].slice(-100), present: next, future: [] }
