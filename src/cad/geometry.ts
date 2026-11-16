@@ -50,7 +50,8 @@ export function nearestSnap(pointer: Point, entities: CadEntity[], visibleLayers
     }
   }
   const intersection = nearestIntersection(pointer, entities, visibleLayers, toleranceWorld)
-  if (intersection && distance(pointer, intersection.point) < min) return intersection
+  // When multiple snap kinds coincide, prefer intersection over midpoint/endpoint.
+  if (intersection && distance(pointer, intersection.point) <= min + 1e-6) return intersection
   return best
 }
 
