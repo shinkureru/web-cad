@@ -4,7 +4,8 @@ import { createDocument,parseDocument,documentReducer } from './document'
 import { rotateEntity,translateEntity } from './editing'
 import { createBlockFromSelection } from './blocks'
 import { findCommand } from './commands'
-import type { DimensionEntity,TextEntity,History } from './types'
+import type { DimensionEntity,TextEntity } from './types'
+import type { History } from './document'
 const p=(x:number,y:number)=>({x,y})
 const linear:DimensionEntity={id:'d1',kind:'dimension',layerId:'dimension',start:p(0,0),
   end:p(3000,1000),placement:p(1000,500),mode:'linear',axis:'horizontal',styleId:'standard'}
