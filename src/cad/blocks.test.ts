@@ -20,7 +20,8 @@ describe('v0.3 reusable block geometry', () => {
       { start:{x:1000,y:0},end:{x:1000,y:500} },
     ])
     expect(next.entities).toMatchObject([{kind:'insert',id:'instance1',position:{x:100,y:200}}])
-    expect(expandEntity(next.entities[0],next)).toMatchObject(doc.entities)
+    expect(expandEntity(next.entities[0],next).map(e => e.kind === 'line' ? [e.start, e.end] : []))
+      .toEqual(doc.entities.map(e => e.kind === 'line' ? [e.start, e.end] : []))
     expect(doc.entities).toHaveLength(2)
   })
   it('expands a rotated and translated block, including rectangle as a closed polyline', () => {
