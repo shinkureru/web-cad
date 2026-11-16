@@ -15,7 +15,7 @@ interface Props {
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
   blockPreview: string | null; pointInputMode: boolean; wallThickness: number
-  annotation: {kind:'text'|'linear'|'aligned'; text:string; points:Point[]} | null
+  annotation: {kind:'text'|'linear'|'aligned'; text:string; points:Point[]} | null; textHeight: number
 }
 
 const gridStep = (scale: number): number => {
@@ -82,7 +82,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -157,7 +157,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     if(annotation){
       ctx.strokeStyle='#80d0f0';ctx.lineWidth=1.3;ctx.setLineDash([6,5])
       if(annotation.kind==='text' && annotation.text){
-        drawEntity(ctx,{id:'preview',kind:'text',text:annotation.text,height:150,rotation:0,
+        drawEntity(ctx,{id:'preview',kind:'text',text:annotation.text,height:textHeight,rotation:0,
           position:hover,layerId:doc.activeLayerId},camera,w,h)
       }else if(annotation.kind!=='text'){
         const pts=annotation.points
@@ -204,7 +204,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
