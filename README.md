@@ -54,6 +54,10 @@ npm run build
 - [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — 交接、測試、限制及接續版本
 - [`docs/CAD_ENGINE_EVALUATION.md`](docs/CAD_ENGINE_EVALUATION.md) — Cota 評估與自製核心維護決策
 
+## Cota 獨立可行性測試
+
+可以在 Actions 手動執行 `Cota upstream feasibility (manual)`，嘗試針對固定版號的上游 Cota 產生靜態站點；此流程獨立運作，不修改目前 WEB CAD 主程式，也不等於已完成 DWG/DXF 往返測試。
+
 ## 技術與授權
 
 目前所有原型繪圖碼均為本 Repo 自行實作，未複製 Cota 原始碼。若日後引入 Cota，必須依法保留 Apache-2.0 LICENSE、NOTICE 與著作權資訊。正式製圖前應另行驗證尺寸精度、字型及 DWG/DXF 往返。
