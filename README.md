@@ -57,6 +57,7 @@ npm run build
 3. 匯入不支援的 ARC、HATCH、SPLINE、MTEXT、bulge 弧線、縮放圖塊等圖元會跳過並提示，**請勿假設部分匯入的圖面完整**。
 4. DXF 多行文字匯出後會拆成數個 TEXT，矩形會轉成封閉 LWPOLYLINE；圖塊保留 BLOCK/INSERT、線性尺寸使用 DIMENSION，但尚未在商用 AutoCAD 完成實際往返驗收。
 5. 具體支援矩陣、單位換算與外部 CAD 驗收清單請讀 [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md)。
+6. CI 已包含獨立 `ezdxf` 解析器的雙向 DXF smoke test；這不是商用 AutoCAD 的正式互通性驗證。
 
 ### GitHub Pages
 
