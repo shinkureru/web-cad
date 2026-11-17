@@ -154,7 +154,7 @@ describe('DXF 2000 interchange',()=>{
     const text=readFileSync(fixture,'utf8')
     const result=importDxf(text,'independent.dxf')
     expect(result.imported).toBe(5)
-    expect(result.skipped).toBe(0)
+    expect(result.skipped, JSON.stringify(result.warnings)).toBe(0)
     expect(result.document.entities.find(e=>e.kind==='line'))
       .toMatchObject({start:P(0,0),end:P(3000,0)})
     expect(result.document.entities.find(e=>e.kind==='circle'))
