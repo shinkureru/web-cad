@@ -66,3 +66,15 @@
 .annotation-entity-controls select {color-scheme:dark}
 .annotation-style-controls p {font-size:10px;color:#8796a6;line-height:1.6;margin:0 0 6px;}
 .annotation-entity-controls :disabled {opacity:.5;cursor:not-allowed}
+
+/* v0.5.0 — audited DXF import/export results */
+.exchange-report{position:absolute;left:18px;bottom:16px;z-index:6;width:min(430px,calc(100% - 36px));max-height:48%;overflow:auto;
+  padding:12px 15px;border:1px solid #55779a;border-radius:8px;background:#1c2a39f2;color:#dce6f1;
+  box-shadow:0 10px 35px #0008;backdrop-filter:blur(6px)}
+.exchange-report header{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:6px}
+.exchange-report header strong{font-size:12px;font-weight:600}
+.exchange-report header button{color:#c0cad5;font-size:20px;line-height:1;border-radius:4px;padding:1px 5px}
+.exchange-report header button:hover{background:#3b5064}
+.exchange-report p{font-size:11px;line-height:1.7;color:#b9c9dc;margin:5px 0}
+.exchange-report p:not(:first-of-type){border-top:1px solid #ffffff16;padding-top:6px}
+@media(max-width:740px){.exchange-report{left:8px;bottom:8px;width:calc(100% - 16px);max-height:42%}.header-actions button{padding:0 7px}}
