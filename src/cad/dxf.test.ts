@@ -2,7 +2,7 @@ import { describe,expect,it } from 'vitest'
 import { createDocument, parseDocument } from './document'
 import { createBlockFromSelection } from './blocks'
 import { exportDxf,importDxf } from './dxf'
-import type { CadDocument, CadEntity } from './types'
+import type { CadEntity } from './types'
 const P=(x:number,y:number)=>({x,y})
 const line=(id:string,layerId:string,a:number,b:number,c:number,d:number):CadEntity=>
   ({id,kind:'line',layerId,start:P(a,b),end:P(c,d)})
