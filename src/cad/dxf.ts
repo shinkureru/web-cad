@@ -151,15 +151,21 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
 
   sec('HEADER')
   out(9,'$ACADVER');out(1,'AC1015')
+  out(9,'$HANDSEED');out(5,'FFFFFF')
+  out(9,'$DWGCODEPAGE');out(3,'ANSI_1252')
   out(9,'$INSUNITS');out(70,4)
   out(9,'$MEASUREMENT');out(70,1)
   out(9,'$LUNITS');out(70,2)
   out(9,'$LUPREC');out(70,3)
   end()
+  sec('CLASSES');end()
   sec('TABLES')
-  out(0,'TABLE');out(2,'LTYPE');out(70,3)
+  for(const name of ['VPORT','VIEW','UCS']){
+    out(0,'TABLE');out(2,name);out(70,0);out(0,'ENDTAB')
+  }
+  out(0,'TABLE');out(2,'LTYPE');out(70,5)
   for(const [name,segments,total] of [
-    ['CONTINUOUS',[],0],['DASHED',[9,-6],15],['CENTER',[16,-5,3,-5],29],
+    ['BYBLOCK',[],0],['BYLAYER',[],0],['CONTINUOUS',[],0],['DASHED',[9,-6],15],['CENTER',[16,-5,3,-5],29],
   ] as [string,number[],number][]){
     rec('LTYPE');out(100,'AcDbSymbolTableRecord');out(100,'AcDbLinetypeTableRecord')
     out(2,name);out(70,0);out(3,name);out(72,65);out(73,segments.length);out(40,total)
@@ -178,8 +184,17 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
   out(2,'STANDARD');out(70,0);out(40,0);out(41,1);out(50,0);out(71,0);out(42,1)
   out(3,'txt');out(4,'')
   out(0,'ENDTAB')
-  out(0,'TABLE');out(2,'DIMSTYLE');out(70,styles.length)
-  for(const s of styles){
+  out(0,'TABLE');out(2,'APPID');out(70,1)
+  rec('APPID');out(100,'AcDbSymbolTableRecord');out(100,'AcDbRegAppTableRecord')
+  out(2,'ACAD');out(70,0)
+  out(0,'ENDTAB')
+  const allStyles=[...styles]
+  if(![...styleNames.values()].some(name=>name.toUpperCase()==='STANDARD')){
+    allStyles.push({...DEFAULT_DIMENSION_STYLES[0],id:'dxf-default-standard',name:'STANDARD'})
+    styleNames.set('dxf-default-standard','STANDARD')
+  }
+  out(0,'TABLE');out(2,'DIMSTYLE');out(70,allStyles.length)
+  for(const s of allStyles){
     out(0,'DIMSTYLE');out(105,h());out(100,'AcDbSymbolTableRecord');out(100,'AcDbDimStyleTableRecord')
     out(2,encode(styleNames.get(s.id)!));out(70,0)
     out(3,s.suffix?'<> '+encode(s.suffix).trim():'<>')
@@ -229,7 +244,14 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
       }
     }else drawable(entity)
   }
-  end();out(0,'EOF')
+  end()
+  sec('OBJECTS')
+  const root=h(),groupDict=h()
+  out(0,'DICTIONARY');out(5,root);out(100,'AcDbDictionary');out(281,1)
+  out(3,'ACAD_GROUP');out(350,groupDict)
+  out(0,'DICTIONARY');out(5,groupDict);out(330,root);out(100,'AcDbDictionary');out(281,1)
+  end()
+  out(0,'EOF')
   return {text:lines.join('\r\n')+'\r\n',warnings}
 }
 
@@ -249,7 +271,7 @@ function parsePairs(text:string):Pair[]{
 }
 function records(pairs:Pair[]){
   const section:{name:string;rows:RecordData[]}[]=[]
-  let current='',table='',block='',record:RecordData|null=null
+  let current='',table='',record:RecordData|null=null
   const layers:RecordData[]=[], styles:RecordData[]=[],blocks:{header:RecordData;entities:RecordData[]}[]=[]
   const entities:RecordData[]=[]
   let activeBlock:{header:RecordData;entities:RecordData[]}|null=null
@@ -264,8 +286,8 @@ function records(pairs:Pair[]){
       else if(current==='TABLES' && r.type==='LAYER' && table==='LAYER')layers.push(r)
       else if(current==='TABLES' && r.type==='DIMSTYLE' && table==='DIMSTYLE')styles.push(r)
       else if(current==='BLOCKS' && r.type==='BLOCK'){
-        block=decode(group(r,2));activeBlock={header:r,entities:[]};blocks.push(activeBlock)
-      }else if(current==='BLOCKS' && r.type==='ENDBLK'){activeBlock=null;block=''}
+        activeBlock={header:r,entities:[]};blocks.push(activeBlock)
+      }else if(current==='BLOCKS' && r.type==='ENDBLK'){activeBlock=null}
       else if(current==='BLOCKS' && activeBlock){activeBlock.entities.push(r)}
       else if(current==='ENTITIES' && r.type!=='EOF')entities.push(r)
     }
