@@ -11,6 +11,8 @@
 - 不支援弧線 bulge、ARC、MTEXT、SPLINE、HATCH、巢狀／縮放 INSERT、3D、外部參照、完整非關聯尺寸交互；被略過物件與原因會彙整顯示。
 - `src/App.tsx` 新增匯出 DXF 按鈕、DXF / JSON 開啟、部分匯入的風險確認、交換紀錄；**原生 JSON 是可靠主檔，匯入覆蓋前須另外備份**。
 - `src/cad/dxf.test.ts` 新增 DXF 正反向、英吋換算、圖塊多份 INSERT、標註、中文字元、失敗／略過警告的單元測試。
+- 新增 `.github/workflows/dxf-interop.yml` 與 `scripts/validate_dxf.py`：GitHub Actions 以獨立 Python `ezdxf` 稽核 WEB CAD 產出、生成外部 DXF 並回交 WEB CAD 讀取，已完成雙向 smoke test。
+- DXF STYLE 預設使用 `arial.ttf` TrueType 字型參照，文字內容以 Unicode 轉義編碼；跨系統仍要確認字型安裝／替代與繁中顯示。
 - 詳細相容矩陣及第三方 CAD 驗收步驟：`docs/DXF_INTERCHANGE.md`。CI 通過不代表真正 AutoCAD 相容；仍需外部 CAD 實際開檔。
 
 ### 驗收流程
@@ -24,7 +26,7 @@
 ### 尚未完成
 
 - DWG 原生讀寫、完整 DXF 標準覆蓋、PDF 比例出圖、圖紙空間與標註關聯，仍屬後續批次。
-- 自產 DXF 尚待真實 AutoCAD、LibreCAD／QCAD、繁體中文字型與工程檔往返驗證。
+- DXF 已通過獨立 `ezdxf` 雙向結構驗證；**仍待真實 AutoCAD、LibreCAD／QCAD、繁體中文字型、商用工程檔及完整尺寸樣式往返驗證**。
 - Cota 上游手動構建 POC 尚未執行，不可宣稱已整合其 CAD 引擎。
 
 ---
