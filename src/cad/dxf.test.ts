@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createDocument, parseDocument } from './document'
 import { createBlockFromSelection } from './blocks'
 import { exportDxf,importDxf } from './dxf'
@@ -147,6 +147,23 @@ describe('DXF 2000 interchange',()=>{
     const exported=exportDxf(doc)
     expect(exported.warnings).toEqual([])
     writeFileSync(destination,exported.text,'utf8')
+  })
+  it('imports independently generated ezdxf geometry and blocks (CI reverse direction)',()=>{
+    const fixture=process.env.DXF_EXTERNAL_FILE
+    if(!fixture)return
+    const text=readFileSync(fixture,'utf8')
+    const result=importDxf(text,'independent.dxf')
+    expect(result.imported).toBe(5)
+    expect(result.skipped).toBe(0)
+    expect(result.document.entities.find(e=>e.kind==='line'))
+      .toMatchObject({start:P(0,0),end:P(3000,0)})
+    expect(result.document.entities.find(e=>e.kind==='circle'))
+      .toMatchObject({center:P(1500,900),radius:450})
+    expect(result.document.entities.find(e=>e.kind==='text'))
+      .toMatchObject({text:'廚房',height:180})
+    expect(result.document.blocks?.some(b=>b.name==='窗型')).toBe(true)
+    expect(result.document.entities.find(e=>e.kind==='insert'))
+      .toMatchObject({rotation:90,position:P(1500,200)})
   })
   it('does not allow malicious or truncated input to replace a drawing',()=>{
     const invalid=['', 'Binary DXF','0\nSECTION\n2\nENTITIES\n0\nENDSEC',
