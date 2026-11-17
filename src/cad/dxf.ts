@@ -5,7 +5,7 @@
  */
 import { createDocument, parseDocument, uid } from './document'
 import { dimensionGeometry, DEFAULT_DIMENSION_STYLES, getDimensionStyle } from './annotations'
-import type { CadDocument, CadEntity, CadLayer, CadPrimitive, DimensionEntity, DimensionStyle, Point } from './types'
+import type { CadDocument, CadEntity, CadPrimitive, DimensionEntity, DimensionStyle, LineType, Point } from './types'
 
 export interface DxfTransfer { text: string; warnings: string[] }
 export interface DxfImport { document: CadDocument; warnings: string[]; imported: number; skipped: number }
