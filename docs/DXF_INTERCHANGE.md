@@ -8,6 +8,8 @@
 - 單位讀取：支援 `$INSUNITS=4` mm、1 英吋、2 英尺、5 公分、6 公尺及 14 公寸；0 或未提供單位時**假設 mm 並顯示警告**；未支援的單位停止匯入，避免錯誤比例。
 - 繁體中文以標準 `\U+XXXX` 字元轉義保存，匯入時還原；顯示仍依瀏覽器／作業系統字型。**並未嵌入字型，也未驗證 SHX／其他字體排版**。
 - 本批沒有新增任何外部 JS 套件，DXF 子集讀寫位於可測試的純 TypeScript 模組。讀入檔案上限 10 MB；原檔於使用者確認前不會取代現有工作區。
+- 已在 GitHub Actions 上新增獨立 `ezdxf` 雙向 smoke test：Python 讀取、稽核 WEB CAD 匯出 DXF，並以 Python 產生外部 DXF 由 WEB CAD 反向讀入。測試已成功，但**仍非 Autodesk AutoCAD 的 GUI 實際驗收**。
+- DXF STYLE 將文字字型參照設為 `arial.ttf`，而非舊式 `txt.shx`；是否可顯示全部繁中字符仍取決於外部 CAD 的作業系統字型及字型替代。
 
 ## 支援的圖元
 
