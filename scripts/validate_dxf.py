@@ -31,3 +31,20 @@ if auditor.errors:
     raise SystemExit(1)
 print(f'ezdxf independent check OK: {len(entities)} modelspace entities, '
       f'{len(insert_names)} INSERT(s), {len(texts)} TEXT(s), {len(doc.layers)} layers.')
+
+# Independent reverse-interchange fixture: created entirely by ezdxf, not our writer.
+external = ezdxf.new('R2000', setup=True)
+external.units = 4
+external.layers.new('外牆', dxfattribs={'color': 7})
+external_msp = external.modelspace()
+external_msp.add_line((0, 0), (3000, 0), dxfattribs={'layer': '外牆'})
+external_msp.add_circle((1500, 900), 450)
+external_msp.add_lwpolyline([(0, 0), (1000, 0), (1000, 800)], close=True)
+external_msp.add_text('廚房', height=180,
+                      dxfattribs={'layer': '外牆', 'insert': (50, 300)})
+window = external.blocks.new('窗型', base_point=(0, 0))
+window.add_line((0, 0), (1200, 0))
+external_msp.add_blockref('窗型', (1500, 200), dxfattribs={'rotation': 90})
+external_file = path.with_name('ezdxf-generated.dxf')
+external.saveas(external_file)
+print(f'Created independent ezdxf fixture: {external_file}')
