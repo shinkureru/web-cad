@@ -182,7 +182,7 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
   out(0,'TABLE');out(2,'STYLE');out(70,1)
   rec('STYLE');out(100,'AcDbSymbolTableRecord');out(100,'AcDbTextStyleTableRecord')
   out(2,'STANDARD');out(70,0);out(40,0);out(41,1);out(50,0);out(71,0);out(42,1)
-  out(3,'txt');out(4,'')
+  out(3,'arial.ttf');out(4,'')
   out(0,'ENDTAB')
   out(0,'TABLE');out(2,'APPID');out(70,1)
   rec('APPID');out(100,'AcDbSymbolTableRecord');out(100,'AcDbRegAppTableRecord')
