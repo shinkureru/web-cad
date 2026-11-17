@@ -1,6 +1,35 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-16 ｜ 最新開發批次：v0.4.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-17 ｜ 最新開發批次：v0.5.0 ｜ Repo：`shinkureru/web-cad`
+
+## v0.5.0 — DXF 2000 匯入／匯出交換子集
+
+- 分支 `feat/v0.5.0-dxf-interchange` → PR #5；使用者驗收後 Merge，禁止直接改 main。
+- 新增 `src/cad/dxf.ts`：ASCII DXF AC1015 導出與讀取，HEADER 中 `$INSUNITS=4`，常用英制／公制單位可轉換為 mm；無單位警告，未知單位中止。
+- 支援 LINE / CIRCLE / LWPOLYLINE（矩形轉封閉聚合線）、TEXT、基本圖層資訊（顏色／線粗／線型／隱藏／鎖定）、單層 BLOCK / INSERT、線性與對齊 DIMENSION 及有限 DIMSTYLE 設定。
+- 繁體中文經 DXF `\\U+XXXX` 編碼；字型仍取決於系統 fallback，沒有 SHX／嵌入字體。
+- 不支援弧線 bulge、ARC、MTEXT、SPLINE、HATCH、巢狀／縮放 INSERT、3D、外部參照、完整非關聯尺寸交互；被略過物件與原因會彙整顯示。
+- `src/App.tsx` 新增匯出 DXF 按鈕、DXF / JSON 開啟、部分匯入的風險確認、交換紀錄；**原生 JSON 是可靠主檔，匯入覆蓋前須另外備份**。
+- `src/cad/dxf.test.ts` 新增 DXF 正反向、英吋換算、圖塊多份 INSERT、標註、中文字元、失敗／略過警告的單元測試。
+- 新增 `.github/workflows/dxf-interop.yml` 與 `scripts/validate_dxf.py`：GitHub Actions 以獨立 Python `ezdxf` 稽核 WEB CAD 產出、生成外部 DXF 並回交 WEB CAD 讀取，已完成雙向 smoke test。
+- DXF STYLE 預設使用 `arial.ttf` TrueType 字型參照，文字內容以 Unicode 轉義編碼；跨系統仍要確認字型安裝／替代與繁中顯示。
+- 詳細相容矩陣及第三方 CAD 驗收步驟：`docs/DXF_INTERCHANGE.md`。CI 通過不代表真正 AutoCAD 相容；仍需外部 CAD 實際開檔。
+
+### 驗收流程
+
+1. `npm test && npm run build`、PR CI 皆通過，之後再 Merge。
+2. 載入室內示範平面圖，匯出 DXF → 外部 CAD 軟體開啟，量測 **6000 mm** 並確認圖層、中文字、尺寸線及圖塊。
+3. 用外部 CAD 再另存 DXF，回 WEB CAD 匯入，核對單位、圖塊參照、尺寸標註、中文字及對齊方向。
+4. 使用一張含 ARC、HATCH、SPLINE 或縮放 INSERT 的圖，確認導入前跳過警告；按取消不可改變現有畫布。
+5. 匯出／匯入 JSON，檢查舊版 v0.1～v0.4 相容與原生圖元可復原。
+
+### 尚未完成
+
+- DWG 原生讀寫、完整 DXF 標準覆蓋、PDF 比例出圖、圖紙空間與標註關聯，仍屬後續批次。
+- DXF 已通過獨立 `ezdxf` 雙向結構驗證；**仍待真實 AutoCAD、LibreCAD／QCAD、繁體中文字型、商用工程檔及完整尺寸樣式往返驗證**。
+- Cota 上游手動構建 POC 尚未執行，不可宣稱已整合其 CAD 引擎。
+
+---
 
 ## 專案方向與協作規則
 

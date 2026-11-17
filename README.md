@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v0.4.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
+> **v0.5.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
 ## 本機執行
 
@@ -33,8 +33,9 @@ npm run build
 - 室內設計圖塊庫：雙人床、三人沙發、餐桌、單開門、平面窗（示意尺寸，單位 mm）
 - 選取物件後設定圖層、顏色、線粗、線型，支援 ByLayer 覆寫
 - localStorage 自動儲存、匯入／匯出 `.webcad.json`、可編輯的示範平面圖
+- **ASCII DXF 2000 (AC1015) 匯入／匯出**：基本 2D 圖元、圖層、文字、單層圖塊與基本線性／對齊標註；匯入不支援的物件會提示略過數量，使用者確認後才取代工作區
 
-支援 Shift 多選以建立圖塊，但編修工具仍只操作最後選取的物件；**尚未支援** TRIM、OFFSET、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG／DXF、列印與 PDF 比例出圖。螢幕線粗與線型並非實體出圖規格。
+支援 Shift 多選以建立圖塊，但編修工具仍只操作最後選取的物件；**尚未支援** TRIM、OFFSET、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、列印與 PDF 比例出圖。螢幕線粗與線型並非實體出圖規格。
 
 ### 操作範例
 
@@ -49,6 +50,15 @@ npm run build
 9. `T` → `廚房` → `1000,1500`，檢查繁中顯示與文字高度；`DLI` → `0,0` → `3000,0` → `1500,500`，應標註 `3000`。
 10. `DAL` → `0,0` → `3000,4000` → `0,3500`，應標註 `5000`；`D` 可調整標註樣式。
 
+### DXF 交換注意事項
+
+1. 先使用右上角「備份 JSON」保存原生 `.webcad.json` 主檔。
+2. 點「匯出 DXF」可取得 ASCII DXF 2000；點「開啟」可選擇 JSON 或 ASCII DXF（10 MB 以下）。
+3. 匯入不支援的 ARC、HATCH、SPLINE、MTEXT、bulge 弧線、縮放圖塊等圖元會跳過並提示，**請勿假設部分匯入的圖面完整**。
+4. DXF 多行文字匯出後會拆成數個 TEXT，矩形會轉成封閉 LWPOLYLINE；圖塊保留 BLOCK/INSERT、線性尺寸使用 DIMENSION，但尚未在商用 AutoCAD 完成實際往返驗收。
+5. 具體支援矩陣、單位換算與外部 CAD 驗收清單請讀 [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md)。
+6. CI 已包含獨立 `ezdxf` 解析器的雙向 DXF smoke test；這不是商用 AutoCAD 的正式互通性驗證。
+
 ### GitHub Pages
 
 1. Repository **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
@@ -59,6 +69,7 @@ npm run build
 
 - [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — 交接、測試、限制及接續版本
 - [`docs/CAD_ENGINE_EVALUATION.md`](docs/CAD_ENGINE_EVALUATION.md) — Cota 評估與自製核心維護決策
+- [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md) — DXF 2000 交換子集、限制與驗收
 
 ## Cota 獨立可行性測試
 
