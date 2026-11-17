@@ -63,7 +63,7 @@ describe('DXF 2000 interchange',()=>{
     const encoded=exportDxf(doc)
     expect(encoded.text).toContain('0\r\nDIMENSION')
     expect(encoded.text).toContain('0\r\nDIMSTYLE')
-    expect(encoded.text).toContain('0\r\nAcDbDimension')
+    expect(encoded.text).toContain('100\r\nAcDbDimension')
     const result=importDxf(encoded.text)
     expect(result.skipped).toBe(0)
     expect(result.document.entities.filter(e=>e.kind==='dimension')).toHaveLength(2)
