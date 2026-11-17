@@ -48,7 +48,7 @@ const intRgb=(i:number)=>'#'+(i&0xffffff).toString(16).padStart(6,'0')
 const ACI=['#e7edf3','#ff3333','#ffff00','#00ff00','#00ffff','#3333ff','#ff00ff','#e7edf3','#808080','#c0c0c0']
 const aciColor=(x:number)=>ACI[Math.abs(x)]||'#e7edf3'
 const ltypeName=(v:string|undefined)=>v==='dashed'?'DASHED':v==='center'?'CENTER':'CONTINUOUS'
-const lineType=(s:string)=>s.toUpperCase()==='DASHED'?'dashed':s.toUpperCase()==='CENTER'?'center':'continuous'
+const lineType=(s:string):LineType=>s.toUpperCase()==='DASHED'?'dashed':s.toUpperCase()==='CENTER'?'center':'continuous'
 const tableEntry = (values: Pair[],code:number)=>values.find(p=>p.code===code)?.value
 const group=(r:RecordData,code:number,defaultVal='')=>tableEntry(r.pairs,code)??defaultVal
 const numberGroup=(r:RecordData,code:number,fallback=0)=> {
