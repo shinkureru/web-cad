@@ -264,7 +264,7 @@ function parsePairs(text:string):Pair[]{
   const pairs:Pair[]=[]
   for(let i=0;i<rows.length;i+=2){
     const c=Number(rows[i].trim())
-    if(!Number.isInteger(c) || c<0 || c>2000)throw new Error('DXF 群組碼無效')
+    if(!Number.isInteger(c) || c< -5 || c>2000)throw new Error('DXF 群組碼無效')
     pairs.push({code:c,value:rows[i+1].trimEnd()})
   }
   return pairs
@@ -363,6 +363,10 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
   function properties(r:RecordData,forceLayer?:string){
     return commonFromRecord(r,forceLayer??resolveLayer(group(r,8,'0')))
   }
+  // Only referenced block content can remove geometry from the visible drawing.
+  // Imported DXF libraries often include unused arrowhead SOLID resources.
+  const referencedBlockNames=new Set(data.entities
+    .filter(r=>r.type==='INSERT').map(r=>decode(group(r,2)).toUpperCase()))
   const blocked=new Map<string,{id:string;name:string;base:Point;entities:CadPrimitive[]}>()
   // Definition names are referenced by INSERT records (case-insensitive).
   for(const b of data.blocks){
@@ -371,10 +375,11 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
     const id='dxf-block-'+uid()
     blocked.set(name.toUpperCase(),{id,name,base:pointGroup(b.header,10,scale),entities:[]})
   }
-  function parseBasic(r:RecordData, insideBlock=false):CadEntity|null {
+  function parseBasic(r:RecordData, insideBlock=false, reportSkip=true):CadEntity|null {
     const kind=r.type
+    const mark=(reason:string)=>{if(reportSkip)skip(reason)}
     try{
-      if(nonZeroElevation(r)){skip(kind+'（非 2D）');return null}
+      if(nonZeroElevation(r)){mark(kind+'（非 2D）');return null}
       const common=properties(r,insideBlock ? '0' : undefined)
       if(kind==='LINE'){
         return {kind:'line',id:uid(),...common,
@@ -382,47 +387,47 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
       }
       if(kind==='CIRCLE'){
         const radius=numberGroup(r,40)*scale
-        if(radius<=0){skip('CIRCLE（半徑無效）');return null}
+        if(radius<=0){mark('CIRCLE（半徑無效）');return null}
         return {kind:'circle',id:uid(),...common,center:pointGroup(r,10,scale),radius}
       }
       if(kind==='LWPOLYLINE'){
         const points:Point[]=[]
         let index=-1
         for(const pair of r.pairs){
-          if(pair.code===42 && Math.abs(Number(pair.value))>1e-9){skip('LWPOLYLINE（bulge 圓弧）');return null}
+          if(pair.code===42 && Math.abs(Number(pair.value))>1e-9){mark('LWPOLYLINE（bulge 圓弧）');return null}
           if(pair.code===10){points.push({x:Number(pair.value)*scale,y:0});index++}
           if(pair.code===20 && index>=0)points[index].y=Number(pair.value)*scale
         }
         if(points.length<2||points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y))){
-          skip('LWPOLYLINE（座標不完整）');return null
+          mark('LWPOLYLINE（座標不完整）');return null
         }
         if((numberGroup(r,70)&1)!==0 && !near(points[0],points.at(-1)!))points.push({...points[0]})
         return {kind:'polyline',id:uid(),...common,points}
       }
       if(kind==='TEXT'){
         const text=decode(group(r,1)),height=numberGroup(r,40,150)*scale
-        if(!text||height<=0){skip('TEXT（內容無效）');return null}
+        if(!text||height<=0){mark('TEXT（內容無效）');return null}
         return {kind:'text',id:uid(),...common,position:pointGroup(r,10,scale),
           text,height,rotation:numberGroup(r,50)}
       }
       if(kind==='INSERT'){
         const name=decode(group(r,2)),block=blocked.get(name.toUpperCase())
-        if(!block){skip('INSERT（找不到定義）');return null}
+        if(!block){mark('INSERT（找不到定義）');return null}
         if(Math.abs(numberGroup(r,41,1)-1)>1e-9||Math.abs(numberGroup(r,42,1)-1)>1e-9
           ||Math.abs(numberGroup(r,43,1)-1)>1e-9 || numberGroup(r,70,1)!==1
-          || numberGroup(r,71,1)!==1){skip('INSERT（縮放／陣列）');return null}
+          || numberGroup(r,71,1)!==1){mark('INSERT（縮放／陣列）');return null}
         return {kind:'insert',id:uid(),...common,blockId:block.id,
           position:pointGroup(r,10,scale),rotation:numberGroup(r,50)}
       }
       if(kind==='DIMENSION'){
         const t=numberGroup(r,70)&7
-        if(t!==0 && t!==1){skip('DIMENSION（非線性／對齊）');return null}
+        if(t!==0 && t!==1){mark('DIMENSION（非線性／對齊）');return null}
         if(!r.pairs.some(p=>p.code===13)||!r.pairs.some(p=>p.code===14)){
-          skip('DIMENSION（缺少標註點）');return null}
+          mark('DIMENSION（缺少標註點）');return null}
         const start=pointGroup(r,13,scale),end=pointGroup(r,14,scale)
         const angle=((numberGroup(r,50)%180)+180)%180
         if(t===0 && Math.min(Math.abs(angle),Math.abs(angle-90),Math.abs(angle-180))>1e-6){
-          skip('DIMENSION（旋轉角度非水平／垂直）');return null
+          mark('DIMENSION（旋轉角度非水平／垂直）');return null
         }
         const axis=angle<45||angle>135?'horizontal':'vertical'
         const sName=decode(group(r,3,'STANDARD'))
@@ -430,10 +435,10 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
         return {kind:'dimension',id:uid(),...common,
           start,end,placement:pointGroup(r,10,scale),mode:t===1?'aligned':'linear',axis,styleId}
       }
-      skip(kind)
+      mark(kind)
       return null
     }catch{
-      skip(kind+'（解析無效）')
+      mark(kind+'（解析無效）')
       return null
     }
   }
@@ -441,7 +446,7 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
     const name=decode(group(b.header,2)),block=blocked.get(name.toUpperCase())
     if(!block)continue
     for(const rec of b.entities){
-      const e=parseBasic(rec,true)
+      const e=parseBasic(rec,true,referencedBlockNames.has(name.toUpperCase()))
       if(e && ['line','polyline','rectangle','circle'].includes(e.kind)){
         const item=e as CadPrimitive
         if(item.kind==='line')block.entities.push({...item,
@@ -465,7 +470,12 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
     if(doc.entities.length>40000)throw new Error('DXF 圖元數量超過安全上限')
   }
   for(const [type,count] of skippedCounts)warnings.push('已略過 '+count+' 個 '+type+' 圖元；原圖可能不完整。')
-  if(doc.blocks.length!==blocked.size)warnings.push('部分空白／複雜圖塊未匯入。')
+  const omittedBlocks=[...blocked.entries()].filter(([,b])=>b.entities.length===0)
+  const omittedReferenced=omittedBlocks.filter(([name])=>referencedBlockNames.has(name))
+  const omittedUnused=omittedBlocks.filter(([name])=>!referencedBlockNames.has(name))
+  if(omittedReferenced.length)warnings.push('部分正在使用的空白／複雜圖塊未匯入。')
+  if(omittedUnused.length)warnings.push('已省略 '+omittedUnused.length+
+    ' 個未使用的特殊／空白圖塊定義；目前模型空間沒有因此失去實體圖元。')
   if(!doc.entities.length && skippedCounts.size)warnings.push('沒有可匯入的 2D 圖元。')
   return {document:parseDocument(doc),warnings,imported:doc.entities.length,
     skipped:[...skippedCounts.values()].reduce((sum,n)=>sum+n,0)}
