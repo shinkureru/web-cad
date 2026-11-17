@@ -1,4 +1,5 @@
 import { describe,expect,it } from 'vitest'
+import { writeFileSync } from 'node:fs'
 import { createDocument, parseDocument } from './document'
 import { createBlockFromSelection } from './blocks'
 import { exportDxf,importDxf } from './dxf'
@@ -126,6 +127,26 @@ describe('DXF 2000 interchange',()=>{
     expect(read.imported).toBe(0)
     expect(read.skipped).toBe(1)
     expect(read.warnings.some(w=>w.includes('縮放'))).toBe(true)
+  })
+  it('emits an independent parser smoke fixture when requested by CI',()=>{
+    const destination=process.env.DXF_SMOKE_FILE
+    if(!destination)return
+    let doc=createDocument()
+    doc.entities=[
+      line('L1','wall',0,0,3000,0),
+      line('L2','wall',3000,0,3000,2400),
+      {id:'TXT',kind:'text',layerId:'0',position:P(200,500),text:'廚房設備',height:150,rotation:0},
+      {id:'DIM',kind:'dimension',layerId:'dimension',start:P(0,0),end:P(3000,0),
+        placement:P(1500,-450),mode:'linear',axis:'horizontal',styleId:'standard'},
+      {id:'DA',kind:'dimension',layerId:'dimension',start:P(0,0),end:P(3000,4000),
+        placement:P(200,3000),mode:'aligned',axis:'horizontal',styleId:'detail'},
+    ]
+    doc=createBlockFromSelection(doc,['L1','L2'],'家具圖塊',P(0,0),'smoke-block','smoke-insert')
+    doc.entities.push({id:'another',kind:'insert',layerId:'furniture',
+      blockId:'smoke-block',position:P(4800,2600),rotation:90})
+    const exported=exportDxf(doc)
+    expect(exported.warnings).toEqual([])
+    writeFileSync(destination,exported.text,'utf8')
   })
   it('does not allow malicious or truncated input to replace a drawing',()=>{
     const invalid=['', 'Binary DXF','0\nSECTION\n2\nENTITIES\n0\nENDSEC',
