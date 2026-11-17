@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import type { CadDocument, Camera, Draft, EditTool, Point, Snap, Tool } from '../cad/types'
+import type { CadDocument, CadDisplayEntity, Camera, DimensionEntity, DimensionStyle, Draft, EditTool, Point, Snap, Tool } from '../cad/types'
 import { distance, hitTest, nearestSnap, orthoPoint, roundPoint, toScreen, toWorld, zoomAt } from '../cad/geometry'
 import { rotateEntity, translateEntity } from '../cad/editing'
 import { wallOutline } from '../cad/walls'
 import { expandEntity, expandedDrawing } from '../cad/blocks'
+import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
@@ -14,6 +15,7 @@ interface Props {
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
   blockPreview: string | null; pointInputMode: boolean; wallThickness: number
+  annotation: {kind:'text'|'linear'|'aligned'; text:string; points:Point[]} | null; textHeight: number
 }
 
 const gridStep = (scale: number): number => {
@@ -21,7 +23,51 @@ const gridStep = (scale: number): number => {
   const power = 10 ** Math.floor(Math.log10(rough))
   return [1, 2, 5, 10].map(n => n * power).find(n => n >= rough) ?? power * 10
 }
-const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entities'][number], camera: Camera, w: number, h: number): void => {
+const FONT = '"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",sans-serif'
+function drawLabel(ctx: CanvasRenderingContext2D, text: string, position: Point,
+  height: number, rotation: number, camera: Camera, w: number, h: number, align: CanvasTextAlign='center') {
+  const p=toScreen(position,camera,w,h)
+  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-rotation*Math.PI/180)
+  ctx.font=`${Math.max(.2,height*camera.scale)}px ${FONT}`
+  ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillStyle=ctx.strokeStyle
+  ctx.fillText(text,0,0);ctx.restore()
+}
+const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
+  camera: Camera, w: number, h: number, style?: DimensionStyle): void => {
+  if (docEntity.kind === 'text') {
+    docEntity.text.split(String.fromCharCode(10)).forEach((line,i)=>{
+      const rad=docEntity.rotation*Math.PI/180
+      drawLabel(ctx,line,{
+        x:docEntity.position.x + Math.sin(rad)*i*docEntity.height*1.3,
+        y:docEntity.position.y - Math.cos(rad)*i*docEntity.height*1.3,
+      },docEntity.height,docEntity.rotation,camera,w,h,'left')
+    })
+    return
+  }
+  if (docEntity.kind === 'dimension') {
+    const geo=dimensionGeometry(docEntity,style??getDimensionStyle())
+    ctx.beginPath()
+    for(const seg of geo.lines){
+      const a=toScreen(seg.a,camera,w,h),b=toScreen(seg.b,camera,w,h)
+      ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y)
+    }
+    ctx.stroke()
+    for(const arrow of geo.arrowheads){
+      ctx.beginPath()
+      arrow.forEach((v,i)=>{const p=toScreen(v,camera,w,h); if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)})
+      ctx.closePath();ctx.fillStyle=ctx.strokeStyle;ctx.fill()
+    }
+    // Cut a readable text gap over the dimension line without changing model geometry.
+    const label=geo.label
+    const screen=toScreen(label.position,camera,w,h)
+    const px=Math.max(.2,label.height*camera.scale)
+    ctx.save();ctx.translate(screen.x,screen.y);ctx.rotate(-label.rotation*Math.PI/180)
+    ctx.font=`${px}px ${FONT}`;const labelWidth=ctx.measureText(label.text).width
+    ctx.fillStyle='#101317';ctx.fillRect(-labelWidth/2-4,-px*.72,labelWidth+8,px*1.44)
+    ctx.restore()
+    drawLabel(ctx,geo.label.text,geo.label.position,geo.label.height,geo.label.rotation,camera,w,h)
+    return
+  }
   const point = (p: Point): Point => toScreen(p, camera, w, h)
   ctx.beginPath()
   switch (docEntity.kind) {
@@ -44,7 +90,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDocument['entit
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -102,7 +148,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.lineWidth = selectedIds.includes(entity.id) ? 2.4 : Math.max(1, Math.min(4, weight * 4))
       const type = entity.linetype && entity.linetype !== 'ByLayer' ? entity.linetype : layer.linetype ?? 'continuous'
       ctx.setLineDash(type === 'dashed' ? [9, 6] : type === 'center' ? [16, 5, 3, 5] : [])
-      drawEntity(ctx, entity, camera, w, h)
+      drawEntity(ctx, entity, camera, w, h, entity.kind==='dimension' ? getDimensionStyle(doc,entity.styleId) : undefined)
       ctx.setLineDash([])
     }
     if (edit?.base && selectedId) {
@@ -112,9 +158,29 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
           ? rotateEntity(original, edit.base, Math.atan2(hover.y - edit.base.y, hover.x - edit.base.x) * 180 / Math.PI)
           : translateEntity(original, { x: hover.x - edit.base.x, y: hover.y - edit.base.y })
         ctx.strokeStyle = '#7cc5ff'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5])
-        for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h)
+        for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h, part.kind==='dimension' ? getDimensionStyle(doc,part.styleId) : undefined)
         ctx.setLineDash([])
       }
+    }
+    if(annotation){
+      ctx.strokeStyle='#80d0f0';ctx.lineWidth=1.3;ctx.setLineDash([6,5])
+      if(annotation.kind==='text' && annotation.text){
+        drawEntity(ctx,{id:'preview',kind:'text',text:annotation.text,height:textHeight,rotation:0,
+          position:hover,layerId:doc.activeLayerId},camera,w,h)
+      }else if(annotation.kind!=='text'){
+        const pts=annotation.points
+        if(pts.length===1){
+          const a=toScreen(pts[0],camera,w,h),b=toScreen(hover,camera,w,h)
+          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()
+        }else if(pts.length===2){
+          const ghost: DimensionEntity={id:'preview',kind:'dimension',layerId:doc.activeLayerId,
+            start:pts[0],end:pts[1],placement:hover,mode:annotation.kind,
+            axis:Math.abs(pts[1].x-pts[0].x)>=Math.abs(pts[1].y-pts[0].y)?'horizontal':'vertical',
+            styleId:doc.activeDimensionStyleId??'standard'}
+          drawEntity(ctx,ghost,camera,w,h,getDimensionStyle(doc,ghost.styleId))
+        }
+      }
+      ctx.setLineDash([])
     }
     if (blockPreview) {
       ctx.strokeStyle = '#7bd9d0'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4])
@@ -146,7 +212,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -190,7 +256,16 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       for (const entity of [...doc.entities].reverse()) {
         const layer = doc.layers.find(l => l.id === entity.layerId)
         if (!layer?.visible || layer.locked) continue
-        const d = Math.min(Infinity, ...expandEntity(entity, doc).map(part => hitTest(toWorld(screen, camera, size.width, size.height), part)))
+        const world=toWorld(screen,camera,size.width,size.height)
+        const d = Math.min(Infinity, ...expandEntity(entity, doc).map(part => {
+          if(part.kind!=='dimension')return hitTest(world,part)
+          const geo=dimensionGeometry(part,getDimensionStyle(doc,part.styleId))
+          return Math.min(...geo.lines.map(seg=>{
+            const dx=seg.b.x-seg.a.x,dy=seg.b.y-seg.a.y,l2=dx*dx+dy*dy
+            const t=l2?Math.max(0,Math.min(1,((world.x-seg.a.x)*dx+(world.y-seg.a.y)*dy)/l2)):0
+            return Math.hypot(world.x-seg.a.x-t*dx,world.y-seg.a.y-t*dy)
+          }),Math.hypot(world.x-geo.label.position.x,world.y-geo.label.position.y))
+        }))
         if (d < closest) { closest = d; match = entity.id }
       }
       onSelect(match, ev.shiftKey)

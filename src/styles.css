@@ -34,3 +34,35 @@
 .wall-thickness{display:flex;align-items:center;gap:6px;font-size:11px;color:#a7b9c9;white-space:nowrap}
 .wall-thickness input{width:67px;height:29px;background:#141a22;color:#d7e9f8;border:1px solid #41536a;border-radius:4px;padding:0 6px;font-size:12px}
 @media(max-width:930px){.wall-thickness{max-width:105px}.wall-thickness input{width:52px}}
+
+/* v0.4.0 — model-space text & dimension style controls */
+.annotation-style-controls,
+.annotation-entity-controls {
+  display:flex;flex-direction:column;gap:10px;padding:5px 15px 17px;
+}
+.annotation-entity-controls {padding:12px 0}
+.annotation-style-controls label,
+.annotation-entity-controls label {
+  display:flex;flex-direction:column;gap:5px;
+  font-size:11px;color:#aab8c7;
+}
+.annotation-style-controls input,
+.annotation-style-controls select,
+.annotation-entity-controls input,
+.annotation-entity-controls select,
+.annotation-entity-controls textarea {
+  border:1px solid #405063;border-radius:5px;
+  color:#e4ecf4;background:#171e26;padding:8px;
+  font-family:inherit;font-size:12px;min-width:0;max-width:100%;
+}
+.annotation-entity-controls textarea {min-height:76px;resize:vertical;line-height:1.6;}
+.annotation-style-controls input:focus-visible,
+.annotation-style-controls select:focus-visible,
+.annotation-entity-controls input:focus-visible,
+.annotation-entity-controls textarea:focus-visible {
+  outline:2px solid #6f9dcd;outline-offset:1px;
+}
+.annotation-style-controls select,
+.annotation-entity-controls select {color-scheme:dark}
+.annotation-style-controls p {font-size:10px;color:#8796a6;line-height:1.6;margin:0 0 6px;}
+.annotation-entity-controls :disabled {opacity:.5;cursor:not-allowed}
