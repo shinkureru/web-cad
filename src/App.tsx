@@ -12,6 +12,7 @@ import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
+import { exportDxf, importDxf } from './cad/dxf'
 import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
 import type { LibraryPreset } from './cad/blocks'
 import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType, DimensionMode, DimensionStyle } from './cad/types'
@@ -99,10 +100,11 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.4.0：T 文字、DLI 線性標註、DAL 對齊標註、D 標註樣式。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.5.0：支援 DXF 2000 匯入／匯出；先備份 JSON 再交換圖面。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [exchangeReport, setExchangeReport] = useState<{title:string;messages:string[]} | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const lastTool = useRef<Tool>('line')
@@ -419,14 +421,57 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  async function importFile(file?: File) {
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) { showNotice('本版僅接受 10 MB 以下的原生 JSON 圖面。'); return }
+  function exportDrawingDxf() {
     try {
-      const parsed = parseDocument(JSON.parse(await file.text()) as unknown)
-      dispatch({ type: 'replace', document: parsed }); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setActiveBlockId(''); selectSingle(null); startTool('select')
+      const result=exportDxf(doc)
+      if(result.warnings.length && !window.confirm(
+        'DXF 匯出會發生以下相容性變更：\n'+result.warnings.join('\n')
+        +'\n\n繼續匯出？（建議先備份原生 JSON）'))return
+      const blob=new Blob([result.text],{type:'application/dxf'})
+      const url=URL.createObjectURL(blob)
+      const a=document.createElement('a')
+      a.href=url;a.download=doc.name.replace(/[\\/:*?"<>|]/g,'_')+'.dxf';a.click()
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000)
+      setExchangeReport({title:'DXF 2000 匯出完成',messages:[
+        '這是 ASCII DXF（AC1015）交換子集；尚未經 AutoCAD 實際開檔驗證，請保留原生 JSON 作為主檔。',
+        ...result.warnings
+      ]})
+      logMessage('已匯出 DXF 2000；請在外部 CAD 驗證文字、圖塊與尺寸標註。')
+    }catch(error){showNotice(error instanceof Error?error.message:'DXF 匯出失敗')}
+  }
+  async function importFile(file?: File) {
+    if(!file)return
+    if(file.size>10*1024*1024){showNotice('本版限制匯入 10 MB 以下的 JSON 或 ASCII DXF。');return}
+    const isDxf=/\.dxf$/i.test(file.name)
+    try {
+      const data=await file.text()
+      let parsed:CadDocument
+      let warnings:string[]=[]
+      let summary=''
+      if(isDxf){
+        const result=importDxf(data,file.name)
+        parsed=result.document
+        warnings=result.warnings
+        summary=`匯入 ${result.imported} 個物件，略過 ${result.skipped} 個不支援物件。`
+      }else{
+        parsed=parseDocument(JSON.parse(data) as unknown)
+        summary=`已開啟原生圖面：${parsed.name}`
+      }
+      const preview=[
+        '開啟此檔案將取代目前工作區圖面，請先另存原生 JSON 備份。',
+        summary,
+        ...warnings.slice(0,12),
+        ...(warnings.length>12?['其餘警告請見後續交換紀錄。']:[]),
+        '確定繼續匯入？'
+      ].join('\n')
+      if(!window.confirm(preview))return
+      dispatch({type:'replace',document:parsed})
+      setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+      setAnnotation(null);setActiveBlockId('');selectSingle(null);startTool('select')
+      setExchangeReport({title:isDxf?'DXF 匯入結果':'原生 JSON 匯入結果',
+        messages:[summary,...warnings,...(isDxf?['請檢查比例、圖塊、中文字型及尺寸標註；尚未驗證 DWG／完整 AutoCAD 相容性。']:[])]})
       showNotice(`已開啟：${parsed.name}`)
-    } catch (error) { showNotice(error instanceof Error ? error.message : '無法開啟此檔案') }
+    }catch(error){showNotice(error instanceof Error?error.message:'無法開啟檔案')}
   }
   function addLayer() {
     const id = uid()
@@ -449,12 +494,13 @@ export default function App() {
       <div className="document-name"><span className="doc-prefix">目前圖面 / </span><input aria-label="圖面名稱" value={doc.name} onChange={e => editDoc(d => ({...d, name: e.target.value}))}/><span className="unsaved-tag">本機自動儲存</span></div>
       <div className="header-actions">
         <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
-        <button title="開啟原生圖面 JSON" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
-        <button className="header-primary" title="匯出 JSON 圖面" onClick={() => downloadDocument(doc)}><Save size={16}/><span>儲存圖面</span></button>
-        <input ref={fileRef} type="file" accept=".json,.webcad.json,application/json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
+        <button title="開啟 JSON / DXF 檔案" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
+        <button title="將圖面匯出 ASCII DXF 2000" onClick={exportDrawingDxf}><ArrowDownToLine size={16}/><span>匯出 DXF</span></button>
+        <button className="header-primary" title="匯出原生 JSON 主檔" onClick={() => downloadDocument(doc)}><Save size={16}/><span>備份 JSON</span></button>
+        <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.4.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.5.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -488,6 +534,11 @@ export default function App() {
         <div className="canvas-wrapper">
           <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation} annotation={annotation} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
+          {exchangeReport && <aside className="exchange-report" role="status" aria-label="檔案交換結果">
+            <header><strong>{exchangeReport.title}</strong>
+              <button aria-label="關閉交換紀錄" onClick={()=>setExchangeReport(null)}>×</button></header>
+            {exchangeReport.messages.map((message,i)=><p key={i}>{message}</p>)}
+          </aside>}
         </div>
         <section className="command-area" aria-label="CAD 指令列">
           <div className="console-history">{log.slice(-2).map((message, i) => <div key={`${i}-${message}`}>{message}</div>)}</div>
@@ -607,7 +658,8 @@ export default function App() {
       </aside>}
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.4.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.5.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+      ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
       ['L / LINE', '直線'], ['W / WALL', '單段等厚雙線牆（牆厚工具列設定）'], ['PL / PLINE', '聚合線（Enter 完成）'], ['REC / RECTANG', '矩形'], ['C / CIRCLE', '圓形'],
@@ -616,6 +668,6 @@ export default function App() {
       ['M / MOVE', '移動所選物件：基準點 → 目標點'], ['CO / COPY', '複製所選物件：基準點 → 目標點'], ['RO / ROTATE', '旋轉所選物件：中心點 → 角度（度）'], ['E / ERASE', '刪除已選取物件'], ['U / UNDO', '復原'], ['REDO', '重做'], ['Z / ZOOM', '縮放至全圖'], ['SAVE', '匯出原生 JSON'],
       ['100,200', '絕對座標 (mm)'], ['@3000,0', '相對座標 (mm)'], ['@1000<90', '相對極座標'], ['1500', '從上一點沿游標方向指定距離'],
       ['交點鎖點', '線段／聚合線／矩形／圓的有限交點'], ['F3', '切換物件鎖點'], ['F8', '切換正交'], ['Esc', '取消操作'], ['中鍵拖曳', '平移畫布'], ['滾輪', '游標處縮放'], ['Ctrl+Z / Ctrl+Y', '復原／重做'],
-    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。僅支援原生 .webcad.json；DWG、DXF、正式施工圖出圖仍在後續規劃中；目前尺寸標註是獨立圖元，尚未與其他圖元建立尺寸關聯；本版圖塊僅支援一層參照、無巢狀及動態圖塊。</p></div></div>}
+    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。僅支援原生 .webcad.json；DWG、完整 DXF 格式相容性與正式施工圖出圖仍在後續規劃中；目前尺寸標註是獨立圖元，尚未與其他圖元建立尺寸關聯；本版圖塊僅支援一層參照、無巢狀及動態圖塊。</p></div></div>}
   </div>
 }
