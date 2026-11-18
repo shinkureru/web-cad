@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v0.8.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
+> **v0.9.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
 ## 本機執行
 
@@ -19,18 +19,18 @@ npm run build
 
 - 毫米模型空間、Canvas 畫布、滾輪游標中心縮放、中鍵平移、全圖縮放
 - **W / WALL**：依中心線兩點與可設定牆厚（預設 120 mm）畫出單段封閉的雙線牆輪廓；尚無自動接角／門洞
-- **O / OFFSET**：選取直線、圓、矩形或直線段聚合線，指定偏移毫米距離及側邊點；保留來源，可重複偏移。
-- **TR / TRIM**：Shift 多選裁切邊界（線、圓、矩形、聚合線、基本圖塊），點擊要刪除的直線或開放聚合線區段；保留兩端與裁切邊界。
-- **EX / EXTEND**：先選有限邊界（線、圓、矩形、聚合線、單層圖塊），再點擊欲延伸 LINE 的端點附近，延伸至最近交點。
-- **F / FILLET**：選恰好兩條 LINE，輸入 mm 半徑，修剪端點與產生圓角；**圓角目前是高密度 POLYLINE 近似，不是原生 ARC**。
+- **O / OFFSET**：選取直線、圓、圓弧、矩形或直線段聚合線，指定偏移毫米距離及側邊點；保留來源，可重複偏移。
+- **TR / TRIM**：Shift 多選裁切邊界（線、圓、ARC、矩形、聚合線、基本圖塊），點擊要刪除的直線、開放聚合線或 ARC 區段；保留弧線的真實半徑和角度。
+- **EX / EXTEND**：先選有限邊界（線、圓、ARC、矩形、聚合線、單層圖塊），再點擊欲延伸 LINE 的端點附近，延伸至最近交點。
+- **F / FILLET**：選恰好兩條 LINE，輸入 mm 半徑，修剪端點與產生**原生 ARC 圓角**（可修改半徑與角度，匯出 DXF ARC）。
 - **CHA / CHAMFER**：選兩條 LINE，輸入如 `100,150` 的兩個毫米距離，自動修剪直線並建立倒角連接線。
 - **框選與批次編輯**：拖曳左→右選完全包含、右→左選交叉；Shift 累積選取、Ctrl+A 選所有可編輯物件；M/CO/RO/DELETE 一次作用於整組。
-- `L` 直線、`PL` 聚合線、`REC` 矩形、`C` 圓
+- `L` 直線、`PL` 聚合線、`REC` 矩形、`C` 圓、**`A`／`ARC` 三點建立真正圓弧**（起點、經過點、終點）
 - **T / TEXT**：新增可編輯繁體中文文字圖元，設定字高、旋轉與圖層
 - **DLI / DIMLINEAR**：水平／垂直投影尺寸；**DAL / DIMALIGNED**：兩點實際長度的斜向對齊尺寸
 - **D / DIMSTYLE**：標準／細部樣式，可調整文字高度、箭頭、延伸線、精度與單位後綴
 - 絕對 `3000,1500`、相對 `@3000,0`、極座標 `@2000<45`、方向距離 `1500` 輸入
-- 物件鎖點：端點／中點／圓心及**交點**（支援有限直線段、矩形、聚合線、圓的相交）
+- 物件鎖點：端點／中點／圓心及**交點**（支援有限直線段、矩形、聚合線、圓與原生 ARC 的相交）
 - F3 鎖點、F8 正交，選取／刪除，Ctrl+Z／Ctrl+Y 復原／重做
 - **選取單一或多個物件後**使用 `M` 移動、`CO` 複製、`RO` 旋轉，並可使用命令列輸入座標／角度
 - 圖層新增、改名、顏色、線粗、線型（Continuous/Dashed/Center）、顯示與鎖定
@@ -42,7 +42,7 @@ npm run build
 - **ASCII DXF 2000 (AC1015) 匯入／匯出**：基本 2D 圖元、圖層、文字、單層圖塊與基本線性／對齊標註；匯入不支援的物件會提示略過數量，使用者確認後才取代工作區
 - **PLOT／Ctrl+P（macOS ⌘P）定比例出圖**：A3/A4、橫／直向、固定 1:20/50/100/200/500、SVG 向量下載、瀏覽器列印／另存 PDF；使用 mm 頁面單位與實體線粗；超出紙張有效區域時禁止裁斷輸出。
 
-支援 Shift 多選以建立圖塊，但編修工具仍只操作最後選取的物件；**尚未支援** 完整 AutoCAD TRIM／OFFSET（弧線／封閉輪廓等）、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
+支援 Shift 多選、框選與批次編修；**尚未支援** 完整 AutoCAD TRIM／OFFSET（圓切成弧、封閉輪廓等）、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
 
 ### 操作範例
 
@@ -60,9 +60,9 @@ npm run build
 ### 進階編修指令（v0.8.0）
 
 - `EX`：先 Shift／框選切割邊界 → 點擊待延伸 LINE 靠近目標端點的部分。
-- `F`：先選兩條 LINE → 輸入 `100`，建立 R100 的近似圓角；R0 接合為尖角。
+- `F`：先選兩條 LINE → 輸入 `100`，建立 **原生 ARC R100 圓角**；R0 接合為尖角。
 - `CHA`：先選兩條 LINE → 輸入 `100,150`，保留兩個距離的斜角切除。
-- 框選「左到右」僅納入完整包含的物件；「右到左」碰到即可納入。批次選取後可 MOVE／COPY／ROTATE／DELETE。詳細驗收與真實 ARC 限制請見 [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md)。
+- 框選「左到右」僅納入完整包含的物件；「右到左」碰到即可納入。批次選取後可 MOVE／COPY／ROTATE／DELETE。詳細驗收請見 [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md)，原生圓弧新增功能見 [`docs/ARC_NATIVE.md`](docs/ARC_NATIVE.md)。
 
 ### 常用編修指令（v0.7.0）
 
@@ -71,11 +71,19 @@ npm run build
 3. 操作完成按 `Esc`，Ctrl+Z／Ctrl+Y 可逐步復原與重做；不支援的複雜輪廓會提示，不會強制產生錯誤圖元。
 4. 詳細支援／限制：[精準編修與 OFFSET/TRIM 驗收文件](docs/PRECISION_EDITING.md)。
 
+### 原生 ARC／DXF 圓弧（v0.9.0）
+
+1. `A` → 點起點 `100,0` → 弧經過點 `0,100` → 終點 `-100,0`，得到圓心原點、R100 的上半圓（真正 ARC）。
+2. 選兩條直角 LINE → `F` → `100`，新增原生 ARC，不再是折線近似；舊版已有的近似聚合線不會自動轉換。
+3. Shift 選取裁切線／ARC 邊界 → `TR` → 點擊 ARC 的待刪除區段，剩餘兩側仍為 ARC。
+4. DXF AC1015 的 ARC 群組 10／20（圓心）、40（半徑）、50／51（起止角）會雙向保存；跨越 0° 的圓弧如 350°→20° 也可正確處理。
+5. 詳細規格與人工驗收：[原生 ARC 圓弧說明](docs/ARC_NATIVE.md)。
+
 ### DXF 交換注意事項
 
 1. 先使用右上角「備份 JSON」保存原生 `.webcad.json` 主檔。
 2. 點「匯出 DXF」可取得 ASCII DXF 2000；點「開啟」可選擇 JSON 或 ASCII DXF（10 MB 以下）。
-3. 匯入不支援的 ARC、HATCH、SPLINE、MTEXT、bulge 弧線、縮放圖塊等圖元會跳過並提示，**請勿假設部分匯入的圖面完整**。
+3. 匯入不支援的 HATCH、SPLINE、MTEXT、bulge 聚合線弧段、縮放圖塊等圖元會跳過並提示，**請勿假設部分匯入的圖面完整**。
 4. DXF 多行文字匯出後會拆成數個 TEXT，矩形會轉成封閉 LWPOLYLINE；圖塊保留 BLOCK/INSERT、線性尺寸使用 DIMENSION，但尚未在商用 AutoCAD 完成實際往返驗收。
 5. 具體支援矩陣、單位換算與外部 CAD 驗收清單請讀 [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md)。
 6. CI 已包含獨立 `ezdxf` 解析器的雙向 DXF smoke test；這不是商用 AutoCAD 的正式互通性驗證。
@@ -101,7 +109,8 @@ npm run build
 - [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md) — DXF 2000 交換子集、限制與驗收
 - [`docs/PLOT_PRINTING.md`](docs/PLOT_PRINTING.md) — A3/A4、實體 mm 比例、SVG 與瀏覽器 PDF 出圖驗收
 - [`docs/PRECISION_EDITING.md`](docs/PRECISION_EDITING.md) — OFFSET／TRIM 精準編修、快捷指令與限制
-- [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md) — v0.8.0 EXTEND／FILLET／CHAMFER、框選與多物件操作
+- [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md) — EXTEND／FILLET／CHAMFER、框選與多物件操作
+- [`docs/ARC_NATIVE.md`](docs/ARC_NATIVE.md) — v0.9.0 原生 ARC、三點定弧、DXF ARC、修剪及驗收
 
 ## Cota 獨立可行性測試
 
