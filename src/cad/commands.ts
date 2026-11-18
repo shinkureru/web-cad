@@ -1,7 +1,7 @@
 import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
-const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
@@ -12,6 +12,7 @@ const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'sa
   DLI: 'linearDimension', DIMLINEAR: 'linearDimension',
   DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
   D: 'dimstyle', DIMSTYLE: 'dimstyle',
+  O: 'offset', OFFSET: 'offset', TR: 'trim', TRIM: 'trim',
   PLOT: 'plot', PRINT: 'plot',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }
