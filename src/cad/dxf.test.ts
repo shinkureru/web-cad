@@ -141,6 +141,7 @@ describe('DXF 2000 interchange',()=>{
         placement:P(1500,-450),mode:'linear',axis:'horizontal',styleId:'standard'},
       {id:'DA',kind:'dimension',layerId:'dimension',start:P(0,0),end:P(3000,4000),
         placement:P(200,3000),mode:'aligned',axis:'horizontal',styleId:'detail'},
+      {id:'ARC',kind:'arc',layerId:'door',center:P(2400,1400),radius:500,startAngle:350,endAngle:45},
     ]
     doc=createBlockFromSelection(doc,['L1','L2'],'家具圖塊',P(0,0),'smoke-block','smoke-insert')
     doc.entities.push({id:'another',kind:'insert',layerId:'furniture',
@@ -154,8 +155,9 @@ describe('DXF 2000 interchange',()=>{
     if(!fixture)return
     const text=readFileSync(fixture,'utf8')
     const result=importDxf(text,'independent.dxf')
-    expect(result.imported).toBe(5)
+    expect(result.imported).toBe(6)
     expect(result.skipped, JSON.stringify(result.warnings)).toBe(0)
+    expect(result.document.entities.find(e=>e.kind==='arc')).toMatchObject({kind:'arc',center:P(2400,1400),radius:500,startAngle:350,endAngle:35})
     expect(result.document.entities.find(e=>e.kind==='line'))
       .toMatchObject({start:P(0,0),end:P(3000,0)})
     expect(result.document.entities.find(e=>e.kind==='circle'))
