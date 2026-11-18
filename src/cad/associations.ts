@@ -100,7 +100,19 @@ export function reconcileCurveAssociations(
       changed=true
       return synced
     }
-    if(sameGeometry(oldSource,source))return entity
+    if(sameGeometry(oldSource,source)){
+      // Moving only the linked label changes its placement, not its measured
+      // center/radius/arc sweep. A standalone MOVE also translates a snapshot
+      // entity's cached center; restore that cache from its live source.
+      const aligned=snapshotFields(entity,source)
+      const matches=entity.radius===aligned.radius&&
+        samePoint(entity.center,aligned.center)&&
+        entity.startAngle===aligned.startAngle&&entity.endAngle===aligned.endAngle&&
+        !entity.orphaned
+      if(matches)return entity
+      changed=true
+      return aligned
+    }
     const movedByUser=!samePoint(oldDim.placement,entity.placement)
     const nextPlacement=movedByUser
       ?entity.placement:projectPlacement(entity,oldSource,source)
