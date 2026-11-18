@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest'
 import {createDocument,documentReducer,parseDocument} from './document'
-import {arcFromThreePoints,arcAt,arcPoint,arcSweep,arcContainsAngle,arcExtents,arcDistance,
-  arcSegmentIntersections,arcCircleIntersections,trimArc,normalizeAngle} from './arcs'
+import {arcFromThreePoints,arcPoint,arcSweep,arcContainsAngle,arcExtents,
+  arcSegmentIntersections,arcCircleIntersections,normalizeAngle} from './arcs'
 import {hitTest,entitySnaps,nearestIntersection} from './geometry'
 import {translateEntity,rotateEntity} from './editing'
 import {createBlockFromSelection,expandInsert} from './blocks'
