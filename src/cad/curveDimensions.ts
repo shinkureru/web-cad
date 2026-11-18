@@ -1,4 +1,4 @@
-import { arcExtents, arcPoint, arcSweep } from './arcs'
+import { arcExtents, arcSweep } from './arcs'
 import { formatDimension } from './annotations'
 import type {
   ArcEntity, CadEntity, CurveDimensionEntity, CurveMeasure,
