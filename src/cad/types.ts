@@ -28,7 +28,15 @@ export interface DimensionEntity extends EntityBase {
   kind: 'dimension'; start: Point; end: Point; placement: Point; mode: DimensionMode
   axis: DimensionAxis; styleId: string
 }
-export type CadDisplayEntity = CadPrimitive | TextEntity | DimensionEntity
+/** Snapshot dimensions for a circular source. Existing source geometry is not associative. */
+export type CurveMeasure = 'radius' | 'diameter' | 'arcLength' | 'angle'
+export interface CurveDimensionEntity extends EntityBase {
+  kind:'curveDimension'; measure:CurveMeasure
+  center:Point; radius:number; placement:Point; styleId:string
+  /** Required only for arcLength or angle; CCW model degrees. */
+  startAngle?:number; endAngle?:number
+}
+export type CadDisplayEntity = CadPrimitive | TextEntity | DimensionEntity | CurveDimensionEntity
 export type CadEntity = CadDisplayEntity | InsertEntity
 export interface BlockDefinition { id: string; name: string; entities: CadPrimitive[] }
 
