@@ -160,16 +160,17 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       drawEntity(ctx, entity, camera, w, h, entity.kind==='dimension' ? getDimensionStyle(doc,entity.styleId) : undefined)
       ctx.setLineDash([])
     }
-    if (edit?.base && selectedId) {
-      const original = doc.entities.find(e => e.id === selectedId)
-      if (original) {
-        const ghost = edit.kind === 'rotate'
-          ? rotateEntity(original, edit.base, Math.atan2(hover.y - edit.base.y, hover.x - edit.base.x) * 180 / Math.PI)
-          : translateEntity(original, { x: hover.x - edit.base.x, y: hover.y - edit.base.y })
-        ctx.strokeStyle = '#7cc5ff'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5])
-        for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h, part.kind==='dimension' ? getDimensionStyle(doc,part.styleId) : undefined)
-        ctx.setLineDash([])
+    if(edit?.base && selectedIds.length){
+      ctx.save()
+      ctx.strokeStyle='#7cc5ff';ctx.lineWidth=1.5;ctx.setLineDash([7,5])
+      for(const original of doc.entities.filter(e=>selectedIds.includes(e.id))){
+        const ghost=edit.kind==='rotate'
+          ? rotateEntity(original,edit.base,Math.atan2(hover.y-edit.base.y,hover.x-edit.base.x)*180/Math.PI)
+          : translateEntity(original,{x:hover.x-edit.base.x,y:hover.y-edit.base.y})
+        for(const part of expandEntity(ghost,doc))
+          drawEntity(ctx,part,camera,w,h,part.kind==='dimension'?getDimensionStyle(doc,part.styleId):undefined)
       }
+      ctx.restore()
     }
     // Explicit trim cutting edges remain visually distinguished even without normal selection.
     if(trimBoundaryIds.length){
