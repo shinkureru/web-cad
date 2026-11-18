@@ -34,7 +34,7 @@ const esc=(v:string):string => v.replace(/&/g,'&amp;').replace(/</g,'&lt;')
 const n=(v:number)=>Number(v.toFixed(5)).toString()
 const tag=(name:string,props:Record<string,string|number>,inner='')=>
   '<'+name+Object.entries(props).map(([key,value])=>' '+key+'="'+esc(String(value))+'"').join('')+
-  (inner? '>'+inner+'</'+name+'>':' />')
+  (inner? '>'+esc(inner)+'</'+name+'>':' />')
 const point=(x:number,y:number):Point=>({x,y})
 const extend=(bounds:Bounds,p:Point):void=>{
   bounds.minX=Math.min(bounds.minX,p.x);bounds.minY=Math.min(bounds.minY,p.y)
