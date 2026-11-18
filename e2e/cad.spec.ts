@@ -57,7 +57,7 @@ async function dragWorld(page:Page,x1:number,y1:number,x2:number,y2:number){
 }
 test('real command-line LINE creation, Undo/Redo, native JSON download and refresh persistence',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
   await expect(page.locator('canvas.cad-canvas')).toBeVisible()
   await sendCommand(page,'L')
   await sendCommand(page,'0,0')
@@ -96,7 +96,7 @@ test('actual Canvas drag: L→R enclosed, R→L crossing, batch MOVE and Undo',a
       start:{x:3200,y:1650},end:{x:3600,y:1650}},
   ])
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
   await dragWorld(page,2100,1400,2700,1700)
   await expect(page.locator('.console-history')).toContainText('框選：1 個')
   await dragWorld(page,2700,1400,2100,1700)
@@ -172,7 +172,7 @@ test('ARC created from three command points survives JSON storage and SVG plot U
 
 test('v1.1.0 accepts Space as CAD confirmation and exact explicit centimetres',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
   const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
   await input.fill('L')
   await input.press('Space')
@@ -255,4 +255,50 @@ test('v1.1.0 preserves browser/system chords and native editing of ordinary inpu
   await page.getByRole('button',{name:'鍵盤與單位設定'}).focus()
   await page.keyboard.press('Space')
   await expect(page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})).toBeVisible()
+})
+
+test('v1.2.0 accepts dynamic distance<angle in cm and preserves Undo',async({page})=>{
+  await page.goto('/')
+  await sendCommand(page,'L')
+  await sendCommand(page,'0,0')
+  await sendCommand(page,'350cm<90')
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'line',start:{x:0,y:0},end:{x:0,y:3500}
+  })
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await waitEntities(page,0)
+})
+test('v1.2.0 exact inspector changes 400 mm line to 350 cm, one Undo step',async({page})=>{
+  await seed(page,[{id:'test-line',kind:'line',layerId:'wall',
+    start:{x:2200,y:1500},end:{x:2600,y:1500}}])
+  await page.goto('/')
+  const midpoint=await canvasWorld(page,2400,1500)
+  await page.mouse.click(midpoint.x,midpoint.y)
+  const exact=page.getByRole('textbox',{name:'精確線段長度'})
+  await expect(exact).toBeVisible()
+  await exact.fill('350cm')
+  await exact.press('Enter')
+  await expect.poll(async()=>((await saved(page)).entities[0].end as {x:number}).x).toBe(5700)
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await expect.poll(async()=>((await saved(page)).entities[0].end as {x:number}).x).toBe(2600)
+})
+test('v1.2.0 grip drag edits only the picked endpoint and supports undo',async({page})=>{
+  await seed(page,[{id:'grip-line',kind:'line',layerId:'wall',
+    start:{x:2200,y:1500},end:{x:2600,y:1500}}])
+  await page.goto('/')
+  const mid=await canvasWorld(page,2400,1500)
+  await page.mouse.click(mid.x,mid.y)
+  await expect(page.getByRole('textbox',{name:'精確線段長度'})).toBeVisible()
+  const from=await canvasWorld(page,2600,1500)
+  const to=await canvasWorld(page,2700,1500)
+  await page.mouse.move(from.x,from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x,to.y,{steps:12})
+  await page.mouse.up()
+  await expect.poll(async()=>((await saved(page)).entities[0].end as {x:number}).x)
+    .toBeGreaterThanOrEqual(2699)
+  expect((await saved(page)).entities[0]).toMatchObject({start:{x:2200,y:1500}})
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await expect.poll(async()=>((await saved(page)).entities[0].end as {x:number}).x).toBe(2600)
 })
