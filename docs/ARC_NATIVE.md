@@ -57,6 +57,6 @@
 
 ## 尚未完成
 
-- 由 CIRCLE 切割直接轉成 ARC、原生 ELLIPSE／SPLINE、LWPOLYLINE bulge 圓弧、ARC 的其他 AutoCAD 畫弧建構選項。
+- **v1.0.0 已支援整圓 CIRCLE 依相鄰有限交點修剪為單一原生 ARC**，參閱 [Chromium E2E 與 CIRCLE 修剪](BROWSER_E2E.md)。尚未支援一次建立多段不相連缺口、原生 ELLIPSE／SPLINE、LWPOLYLINE bulge 圓弧、ARC 的其他 AutoCAD 畫弧建構選項。
 - ARC 弧長／角度標註、圓心夾點拖曳與動態幾何約束、圓弧與閉合多邊形的所有拓撲組合、真正 DXF/DWG 全格式相容。
-- 自動化端對端瀏覽器滑鼠／觸控測試、圖紙工程認證、實際 CAD GUI 及印表機實測。
+- **v1.0.0 已加入 Chromium Playwright 自動化滑鼠/鍵盤、檔案往返測試**；Safari／Firefox／行動觸控、圖紙工程認證、實際 CAD GUI 及印表機實測仍未完成。
