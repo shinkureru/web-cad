@@ -6,12 +6,15 @@ import { rotateEntity, translateEntity } from '../cad/editing'
 import { wallOutline } from '../cad/walls'
 import { expandEntity, expandedDrawing } from '../cad/blocks'
 import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
+import { offsetEntity } from '../cad/precisionEdit'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
   tool: Tool; draft: Draft | null; selectedId: string | null; selectedIds: string[]
   cursor: Point; onCursorChange: (v: Point) => void
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
+  onPick: (id: string | null, point: Point) => void; pickMode: boolean
+  trimBoundaryIds: string[]; offsetPreview: {sourceId: string; distance: number} | null
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
   blockPreview: string | null; pointInputMode: boolean; wallThickness: number
@@ -90,7 +93,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onPick, pickMode, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -162,6 +165,30 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         ctx.setLineDash([])
       }
     }
+    // Explicit trim cutting edges remain visually distinguished even without normal selection.
+    if(trimBoundaryIds.length){
+      ctx.strokeStyle='#e8b86a';ctx.lineWidth=2;ctx.setLineDash([5,4])
+      for(const entity of doc.entities.filter(e=>trimBoundaryIds.includes(e.id))){
+        for(const part of expandEntity(entity,doc)){
+          drawEntity(ctx,part,camera,w,h,part.kind==='dimension'?getDimensionStyle(doc,part.styleId):undefined)
+        }
+      }
+      ctx.setLineDash([])
+    }
+    if(offsetPreview){
+      const source=doc.entities.find(e=>e.id===offsetPreview.sourceId)
+      if(source){
+        try{
+          const ghost=offsetEntity(source,offsetPreview.distance,hover)
+          ctx.strokeStyle='#78d6ce';ctx.lineWidth=1.7;ctx.setLineDash([7,5])
+          drawEntity(ctx,ghost,camera,w,h)
+          ctx.setLineDash([])
+        }catch{
+          // Invalid side/degenerate offset cannot be previewed; drawing remains unchanged.
+          ctx.setLineDash([])
+        }
+      }
+    }
     if(annotation){
       ctx.strokeStyle='#80d0f0';ctx.lineWidth=1.3;ctx.setLineDash([6,5])
       if(annotation.kind==='text' && annotation.text){
@@ -212,7 +239,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview]
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -220,6 +247,10 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
   }
   function effectivePoint(screen: Point): Point {
     let p = toWorld(screen, camera, size.width, size.height)
+    // OFFSET side and TRIM pick must be raw cursor positions; endpoint OSNAP would
+    // change the side or the segment to delete at a crossing.
+    if(offsetPreview || pickMode || (pointInputMode && !annotation && !blockPreview && !edit))
+      {setSnap(null);return roundPoint(p)}
     if (ortho && draft?.points.length) p = orthoPoint(draft.points.at(-1)!, p)
     else if (ortho && edit?.base && edit.kind !== 'rotate') p = orthoPoint(edit.base, p)
     if (osnap) {
@@ -255,7 +286,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       let match: string | null = null, closest = 12 / camera.scale
       for (const entity of [...doc.entities].reverse()) {
         const layer = doc.layers.find(l => l.id === entity.layerId)
-        if (!layer?.visible || layer.locked) continue
+        if (!layer?.visible || layer.locked || (pickMode && trimBoundaryIds.includes(entity.id))) continue
         const world=toWorld(screen,camera,size.width,size.height)
         const d = Math.min(Infinity, ...expandEntity(entity, doc).map(part => {
           if(part.kind!=='dimension')return hitTest(world,part)
@@ -268,14 +299,15 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         }))
         if (d < closest) { closest = d; match = entity.id }
       }
-      onSelect(match, ev.shiftKey)
+      if(pickMode)onPick(match,point)
+      else onSelect(match, ev.shiftKey)
     } else {
       const layer = doc.layers.find(l => l.id === doc.activeLayerId)
       if (layer?.visible && !layer.locked) onPoint(point)
     }
   }
   return <div className="drawing-surface" ref={hostRef}>
-    <canvas ref={canvasRef} className="cad-canvas" aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : 'crosshair' }}
+    <canvas ref={canvasRef} className="cad-canvas" aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : 'crosshair' }}
       onPointerMove={handlePointerMove} onPointerDown={handlePointerDown}
       onPointerUp={ev => { if (drag.current?.pointerId === ev.pointerId) drag.current = null }}
       onPointerCancel={() => { drag.current = null }}
@@ -283,7 +315,9 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       onAuxClick={e => e.preventDefault()}
       onWheel={e => { e.preventDefault(); onCameraChange(zoomAt(camera, e.deltaY < 0 ? 1.15 : 1 / 1.15, localPosition(e), size.width, size.height)) }} />
     <div className="canvas-label"><span className="canvas-label-mark">⌗</span> 模型空間 <span className="canvas-label-sep">/</span> TOP <span className="canvas-label-sep">/</span> 2D 線框</div>
-    <div className="canvas-guide">滾輪縮放 · 按住中鍵平移 · 輸入指令開始繪圖</div>
+    <div className="canvas-guide">{pickMode?'TRIM：點擊要刪除的部分；金色虛線為裁切邊界':
+      offsetPreview?'OFFSET：點擊偏移方向；青色虛線為預覽':
+      '滾輪縮放 · 按住中鍵平移 · 輸入指令開始繪圖'}</div>
     <div className="axis-widget"><span className="axis-y">Y</span><span className="axis-origin"/><span className="axis-x">X</span></div>
   </div>
 }
