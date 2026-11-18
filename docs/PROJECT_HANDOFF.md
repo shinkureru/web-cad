@@ -1,6 +1,49 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v1.2.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v1.3.0 ｜ Repo：`shinkureru/web-cad`
+
+## v1.3.0 — 可鍵入的動態 HUD 與半徑、直徑、圓弧角度／弧長尺寸標註
+
+### 版本與協作
+
+- 2026-11-18 使用者要求繼續下一個批次，按前一批後續方向定義 v1.3.0：真正可鍵入的游標旁距離／角度、曲線尺寸標註，以及 JSON／DXF／SVG/PLOT 相容性與 E2E。
+- 經 GitHub 核實 PR #12 已合併，最新 main SHA 15eba34121dd9a256f2180e17e81b1b9c77267fb；新分支 feat/v1.3.0-curve-dimensions-dynamic-hud，對應 PR #13。只在新分支實作，使用者自行驗收和 Merge，**嚴禁直接更新 main**。
+- package.json 版本為 1.3.0；WEB CAD Native Document version:1、單位 mm、DXF AC1015 保持不變。但含新 curveDimension 的 JSON **不一定能被舊版 WEB CAD 認得**。
+
+### 技術與功能
+
+- src/cad/dynamicInput.ts、src/components/CadCanvas.tsx：第一繪圖點存在時，游標旁的 HUD 從 v1.2.0 只讀長度／角度擴充成兩個真正可輸入欄位。畫布按 Tab／F2 可以進入長度欄；長度支援 mm/cm/m 或預設單位，角度為度、可留空沿游標方向；按 Space／Enter（依 v1.1 使用者確認鍵設定）或「套用」後，交給既有 onPoint 繪製流程。Escape 返回畫布，不攔截原生系統快捷。
+- src/cad/types.ts：新增 CurveMeasure = radius／diameter／angle／arcLength 及 CurveDimensionEntity(kind:curveDimension)；存圓心、半徑、標註文字位置、標註樣式 ID，以及弧角（如需）。這是一個**非關聯式的幾何快照**，來源圓弧編輯後不會自動更新；無依賴來源 ID。
+- src/cad/curveDimensions.ts：純幾何 makeCurveDimension、curveDimensionPicture、curveDimensionExtents。R 和 Ø 有圓心、直徑線／引線、箭頭；DAN 以 arcSweep 正向逆時針跨度呈現度數；DAR 以半徑 × 弧度跨度呈現模型 mm 弧長，使用真弧線及箭頭。跨 0°（350→20）正確為 30°；文字依既有 DIMSTYLE 精度、字高、間距計算，角度顯示 °，其餘顯示 R／Ø／⌒。
+- 命令列／UI：DRA/DIMRADIUS、DDI/DIMDIAMETER 允許 CIRCLE／ARC，DAN/DIMANGULAR 和 DAR/DIMARC 只允許單一 ARC。先選取來源再啟動命令或點右側物件資訊按鈕，然後點畫布或輸入絕對座標 X,Y 放置標註。可 Undo/Redo、選取、移動與旋轉。
+- src/cad/document.ts：JSON schema 嚴格驗證新 curveDimension 的半徑、坐標、模式、角度與 styleID，不接受退化 ARC 或缺少樣式。標註維持獨立圖元，可於相同 CAD Undo history 內管理。
+- src/cad/plot.ts、src/components/CadCanvas.tsx、src/cad/geometry.ts、src/cad/grips.ts、src/cad/editing.ts：完整渲染/選取/尺寸範圍/夾點移動、平移旋轉與 SVG 真向量 ARC/文字/箭頭。PLOT 真實紙張比例不變。
+- src/cad/dxf.ts：匯出曲線尺寸時**拆分成 LINE、ARC、LWPOLYLINE、TEXT**，匯出警告「重新匯入後不再是原生標註」。未宣稱 AutoCAD 原生 DIMRADIUS、DIMANGULAR、DIMARC DXF 往返，也不默默遺失標註外觀。
+- 22 個可編輯 CAD 簡碼新增 4 個，現在 **26 個**，既有 v1.1 Space／Enter、cm 設定和完整指令仍有效。
+- src/styles.css 新增游標旁可鍵入表單及右側曲線尺寸操作小區塊；README、docs/CURVE_DIMENSIONS.md、docs/GEOMETRY_WORKFLOW.md、docs/KEYBOARD_AND_UNITS.md 更新。
+
+### 自動測試與 CI
+
+- 新增 src/cad/curveDimensions.test.ts **12 項**，總計 **161／161 Vitest 測試成功**：精確長度角度、無效輸入拒絕、R/Ø、弧長、CCW 弧角跨 0°、來源快照不變、JSON schema、PLOT SVG、DXF 顯示/警告、變換、夾點及 Undo/Redo。
+- e2e/cad.spec.ts 新增三條 Chromium 實際操作：可在游標 HUD 鍵入 350cm／90° 直接出線；真實畫布選 CIRCLE，DRA 建原生曲線尺寸並 Undo；選 ARC 分別 DAR/DAN 建弧長和角度尺寸。總共 **14／14 Playwright E2E 通過**。
+- GitHub Actions 針對 PR #13 的 Build/test/TS/Vite、Chromium E2E、獨立 Python ezdxf 雙向互通、向量 PLOT/PDF 實際頁面尺寸四個 workflow 均需在**最新 HEAD** 再度確認 success。先前程式提交均已綠燈，文件追加 commit 需重新核對。
+- 檔案說明：docs/CURVE_DIMENSIONS.md 詳列操作、模型語意、不能自動連動的重要限制和手動測試。
+
+### Merge 後人工驗收
+
+1. L → 0,0 → 畫布 Tab/F2 進 HUD → 長度 350cm、角度 45° → Space／Enter 或「套用」，終點約 (2474.874,2474.874) mm；Ctrl+Z 一次復原。
+2. CIRCLE 圓心 (2400,1500)、R500：單選圓 → DRA 點 (2950,2100) 得 R500；DDI 得 Ø1000。
+3. ARC 中心 (2400,1500)、R500、0°→180°：DAR 得 ⌒1571、DAN 得 180°。35° 跨 0° 圓弧應以 CCW 真實跨度計算。
+4. 對來源圖形改動半徑，舊標註不會自動變更；應人工重新量測。測試選取標註、拖曳文字位置夾點、MOVE/ROTATE、Undo/Redo。
+5. 備份 JSON 再讀回，新 curveDimension 完整保留；DXF 匯出時必須明確顯示拆分警告，重新匯入只能剩普通 2D 圖元。使用外部 CAD GUI 檢查 R/Ø/弧線文字，以及中文字型。
+6. PLOT A3/1:50 SVG／PDF 要檢查裁切、字型與量測結果，不能只憑 CI 宣稱施工認證。
+7. 回歸舊版 LINE/PL/ARC、F3 OSNAP、F8 正交、Space/Enter、cm/mm、既有線性尺寸 DLI/DAL；Safari/Firefox/行動觸控/繁中 IME 未完整實機驗證。
+
+### v1.4.0 可依需求接續
+
+優先：關聯式尺寸標註與來源引用（含變更追蹤），兩條 LINE 的一般 DIMANGULAR，更多 DXF 原生 DIMENSION 轉換，LWPOLYLINE bulge／橢圓與 DXF 相容性，最後補充多瀏覽器 Playwright 回歸。保持「一批 → PR → 使用者 Merge → 下一批」。
+
+---
 
 ## v1.2.0 — 動態距離／角度、夾點編輯、精準屬性與 OSNAP
 
