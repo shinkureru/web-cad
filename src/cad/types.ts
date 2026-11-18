@@ -1,6 +1,6 @@
 export interface Point { x: number; y: number }
 export interface Camera extends Point { scale: number }
-export type Tool = 'select' | 'line' | 'polyline' | 'rectangle' | 'circle' | 'wall'
+export type Tool = 'select' | 'line' | 'polyline' | 'rectangle' | 'circle' | 'arc' | 'wall'
 export type EditTool = 'move' | 'copy' | 'rotate'
 export type LineType = 'continuous' | 'dashed' | 'center'
 export type PropertyValue<T> = T | 'ByLayer'
@@ -10,7 +10,11 @@ export interface LineEntity extends EntityBase { kind: 'line'; start: Point; end
 export interface PolylineEntity extends EntityBase { kind: 'polyline'; points: Point[] }
 export interface RectangleEntity extends EntityBase { kind: 'rectangle'; start: Point; end: Point }
 export interface CircleEntity extends EntityBase { kind: 'circle'; center: Point; radius: number }
-export type CadPrimitive = LineEntity | PolylineEntity | RectangleEntity | CircleEntity
+/** CCW circular arc from startAngle to endAngle in degrees, relative to +X, in model-space mm. */
+export interface ArcEntity extends EntityBase {
+  kind: 'arc'; center: Point; radius: number; startAngle: number; endAngle: number
+}
+export type CadPrimitive = LineEntity | PolylineEntity | RectangleEntity | CircleEntity | ArcEntity
 /** Insert references one non-nested block definition; origin, angle and coordinates are all mm. */
 export interface InsertEntity extends EntityBase { kind: 'insert'; blockId: string; position: Point; rotation: number }
 export interface TextEntity extends EntityBase { kind: 'text'; position: Point; text: string; height: number; rotation: number }
