@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { writeFileSync } from 'node:fs'
 import { buildPlot, drawingBounds, printMarkup, DEFAULT_PLOT_OPTIONS } from './plot'
 import { createDocument } from './document'
 import type { CadDocument, CadEntity } from './types'
@@ -107,6 +108,21 @@ describe('v0.6 model-space to physical paper plotting',()=>{
     expect(html).toContain('@page{size:210mm 297mm;margin:0}')
     expect(html).toContain('height:297mm')
     expect(html).toContain('role="img"')
+  })
+  it('emits a deterministic A3 1:50 plot for independent PDF media-box check',()=>{
+    const dest=process.env.PLOT_SMOKE_FILE
+    if(!dest)return
+    const d=createDocument()
+    d.name='出圖物理尺寸驗證'
+    d.entities=[
+      line('calibration','wall',0,0,6000,0),
+      {id:'room',kind:'text',layerId:'0',position:P(1500,700),text:'客廳',height:150,rotation:0},
+      {id:'measure',kind:'dimension',layerId:'dimension',start:P(0,0),end:P(6000,0),
+        placement:P(3000,-700),mode:'linear',axis:'horizontal',styleId:'standard'},
+    ]
+    const result=plotWith(d,{paper:'A3',orientation:'landscape',scale:50})
+    expect(result.fits).toBe(true)
+    writeFileSync(dest,result.svg,'utf8')
   })
   it('rejects empty drawings and invalid page settings',()=>{
     const empty=createDocument()
