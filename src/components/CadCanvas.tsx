@@ -7,13 +7,17 @@ import { wallOutline } from '../cad/walls'
 import { expandEntity, expandedDrawing } from '../cad/blocks'
 import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 import { offsetEntity } from '../cad/precisionEdit'
+import { cornerGeometry, windowSelection } from '../cad/advancedEditing'
+import type { CornerMode } from '../cad/advancedEditing'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
   tool: Tool; draft: Draft | null; selectedId: string | null; selectedIds: string[]
   cursor: Point; onCursorChange: (v: Point) => void
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
+  onSelectMany: (ids: string[], extend: boolean) => void
   onPick: (id: string | null, point: Point) => void; pickMode: boolean
+  pickLabel: 'trim'|'extend'|null; cornerMode: CornerMode|null; cornerPreviewValue: string
   trimBoundaryIds: string[]; offsetPreview: {sourceId: string; distance: number} | null
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
@@ -93,13 +97,15 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onPick, pickMode, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
   const [hover, setHover] = useState<Point>(cursor)
   const [snap, setSnap] = useState<Snap | null>(null)
   const drag = useRef<{ pointerId: number; at: Point; cam: Camera } | null>(null)
+  const selectionRef=useRef<{pointerId:number;from:Point;shift:boolean;dragging:boolean}|null>(null)
+  const [selectionBox,setSelectionBox]=useState<{from:Point;to:Point}|null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -154,16 +160,17 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       drawEntity(ctx, entity, camera, w, h, entity.kind==='dimension' ? getDimensionStyle(doc,entity.styleId) : undefined)
       ctx.setLineDash([])
     }
-    if (edit?.base && selectedId) {
-      const original = doc.entities.find(e => e.id === selectedId)
-      if (original) {
-        const ghost = edit.kind === 'rotate'
-          ? rotateEntity(original, edit.base, Math.atan2(hover.y - edit.base.y, hover.x - edit.base.x) * 180 / Math.PI)
-          : translateEntity(original, { x: hover.x - edit.base.x, y: hover.y - edit.base.y })
-        ctx.strokeStyle = '#7cc5ff'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 5])
-        for (const part of expandEntity(ghost, doc)) drawEntity(ctx, part, camera, w, h, part.kind==='dimension' ? getDimensionStyle(doc,part.styleId) : undefined)
-        ctx.setLineDash([])
+    if(edit?.base && selectedIds.length){
+      ctx.save()
+      ctx.strokeStyle='#7cc5ff';ctx.lineWidth=1.5;ctx.setLineDash([7,5])
+      for(const original of doc.entities.filter(e=>selectedIds.includes(e.id))){
+        const ghost=edit.kind==='rotate'
+          ? rotateEntity(original,edit.base,Math.atan2(hover.y-edit.base.y,hover.x-edit.base.x)*180/Math.PI)
+          : translateEntity(original,{x:hover.x-edit.base.x,y:hover.y-edit.base.y})
+        for(const part of expandEntity(ghost,doc))
+          drawEntity(ctx,part,camera,w,h,part.kind==='dimension'?getDimensionStyle(doc,part.styleId):undefined)
       }
+      ctx.restore()
     }
     // Explicit trim cutting edges remain visually distinguished even without normal selection.
     if(trimBoundaryIds.length){
@@ -174,6 +181,34 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         }
       }
       ctx.setLineDash([])
+    }
+    if(selectionBox){
+      const {from,to}=selectionBox
+      const crossing=to.x<from.x
+      ctx.save()
+      ctx.strokeStyle=crossing?'#83dca7':'#78b6ff'
+      ctx.lineWidth=1.2;ctx.setLineDash(crossing?[7,4]:[])
+      ctx.fillStyle=crossing?'#5cce8a26':'#6faeff21'
+      ctx.fillRect(Math.min(from.x,to.x),Math.min(from.y,to.y),
+        Math.abs(to.x-from.x),Math.abs(to.y-from.y))
+      ctx.strokeRect(Math.min(from.x,to.x),Math.min(from.y,to.y),
+        Math.abs(to.x-from.x),Math.abs(to.y-from.y))
+      ctx.restore()
+    }
+    if(cornerMode&&selectedIds.length===2){
+      const [a,b]=selectedIds.map(id=>doc.entities.find(e=>e.id===id))
+      if(a?.kind==='line'&&b?.kind==='line'){
+        try{
+          const values=cornerPreviewValue.split(',').map(n=>Number(n.trim()))
+          const d1=cornerPreviewValue.trim()&&Number.isFinite(values[0])?values[0]:100
+          const d2=cornerMode==='fillet'?d1:(values[1]??d1)
+          const preview=cornerGeometry(a,b,cornerMode,d1,d2,'preview')
+          ctx.strokeStyle='#a6d6f1';ctx.lineWidth=2;ctx.setLineDash([6,3])
+          drawEntity(ctx,preview.a,camera,w,h);drawEntity(ctx,preview.b,camera,w,h)
+          if(preview.connector)drawEntity(ctx,preview.connector,camera,w,h)
+          ctx.setLineDash([])
+        }catch{/* invalid geometry is explained by command submission */}
+      }
     }
     if(offsetPreview){
       const source=doc.entities.find(e=>e.id===offsetPreview.sourceId)
@@ -239,7 +274,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -261,63 +296,93 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     } else setSnap(null)
     return roundPoint(p)
   }
-  function handlePointerMove(ev: React.PointerEvent<HTMLCanvasElement>) {
-    const screen = localPosition(ev)
-    if (drag.current?.pointerId === ev.pointerId) {
-      const d = drag.current
-      onCameraChange({ ...d.cam, x: d.cam.x - (screen.x - d.at.x) / d.cam.scale, y: d.cam.y + (screen.y - d.at.y) / d.cam.scale })
+  function pickAt(screen:Point):string|null{
+    let match:string|null=null,closest=12/camera.scale
+    const world=toWorld(screen,camera,size.width,size.height)
+    for(const entity of [...doc.entities].reverse()){
+      const layer=doc.layers.find(l=>l.id===entity.layerId)
+      if(!layer?.visible||layer.locked||(pickMode&&trimBoundaryIds.includes(entity.id)))continue
+      const d=Math.min(Infinity,...expandEntity(entity,doc).map(part=>{
+        if(part.kind!=='dimension')return hitTest(world,part)
+        const geo=dimensionGeometry(part,getDimensionStyle(doc,part.styleId))
+        return Math.min(...geo.lines.map(seg=>{
+          const dx=seg.b.x-seg.a.x,dy=seg.b.y-seg.a.y,l2=dx*dx+dy*dy
+          const t=l2?Math.max(0,Math.min(1,((world.x-seg.a.x)*dx+(world.y-seg.a.y)*dy)/l2)):0
+          return Math.hypot(world.x-seg.a.x-t*dx,world.y-seg.a.y-t*dy)
+        }),Math.hypot(world.x-geo.label.position.x,world.y-geo.label.position.y))
+      }))
+      if(d<closest){closest=d;match=entity.id}
+    }
+    return match
+  }
+  function handlePointerMove(ev:React.PointerEvent<HTMLCanvasElement>){
+    const screen=localPosition(ev)
+    if(drag.current?.pointerId===ev.pointerId){
+      const d=drag.current
+      onCameraChange({...d.cam,x:d.cam.x-(screen.x-d.at.x)/d.cam.scale,
+        y:d.cam.y+(screen.y-d.at.y)/d.cam.scale})
       return
     }
-    const p = effectivePoint(screen)
-    setHover(p); onCursorChange(p)
-  }
-  function handlePointerDown(ev: React.PointerEvent<HTMLCanvasElement>) {
-    const screen = localPosition(ev)
-    if (ev.button === 1 || (ev.button === 0 && ev.altKey)) {
-      drag.current = { pointerId: ev.pointerId, at: screen, cam: camera }
-      ev.currentTarget.setPointerCapture(ev.pointerId)
-      ev.preventDefault(); return
-    }
-    if (ev.button !== 0) return
-    const point = effectivePoint(screen)
-    setHover(point); onCursorChange(point)
-    if (edit || pointInputMode) { onPoint(point); return }
-    if (tool === 'select') {
-      let match: string | null = null, closest = 12 / camera.scale
-      for (const entity of [...doc.entities].reverse()) {
-        const layer = doc.layers.find(l => l.id === entity.layerId)
-        if (!layer?.visible || layer.locked || (pickMode && trimBoundaryIds.includes(entity.id))) continue
-        const world=toWorld(screen,camera,size.width,size.height)
-        const d = Math.min(Infinity, ...expandEntity(entity, doc).map(part => {
-          if(part.kind!=='dimension')return hitTest(world,part)
-          const geo=dimensionGeometry(part,getDimensionStyle(doc,part.styleId))
-          return Math.min(...geo.lines.map(seg=>{
-            const dx=seg.b.x-seg.a.x,dy=seg.b.y-seg.a.y,l2=dx*dx+dy*dy
-            const t=l2?Math.max(0,Math.min(1,((world.x-seg.a.x)*dx+(world.y-seg.a.y)*dy)/l2)):0
-            return Math.hypot(world.x-seg.a.x-t*dx,world.y-seg.a.y-t*dy)
-          }),Math.hypot(world.x-geo.label.position.x,world.y-geo.label.position.y))
-        }))
-        if (d < closest) { closest = d; match = entity.id }
+    const selection=selectionRef.current
+    if(selection?.pointerId===ev.pointerId){
+      if(Math.hypot(screen.x-selection.from.x,screen.y-selection.from.y)>=6){
+        selection.dragging=true
+        setSelectionBox({from:selection.from,to:screen})
       }
-      if(pickMode)onPick(match,point)
-      else onSelect(match, ev.shiftKey)
-    } else {
-      const layer = doc.layers.find(l => l.id === doc.activeLayerId)
-      if (layer?.visible && !layer.locked) onPoint(point)
+      // Selection boxes use raw model coordinates and never OSNAP their corners.
+      const raw=roundPoint(toWorld(screen,camera,size.width,size.height))
+      setHover(raw);onCursorChange(raw)
+      return
     }
+    const point=effectivePoint(screen)
+    setHover(point);onCursorChange(point)
+  }
+  function handlePointerDown(ev:React.PointerEvent<HTMLCanvasElement>){
+    const screen=localPosition(ev)
+    if(ev.button===1||(ev.button===0&&ev.altKey)){
+      drag.current={pointerId:ev.pointerId,at:screen,cam:camera}
+      ev.currentTarget.setPointerCapture(ev.pointerId)
+      ev.preventDefault();return
+    }
+    if(ev.button!==0)return
+    const point=effectivePoint(screen)
+    setHover(point);onCursorChange(point)
+    if(edit||pointInputMode){onPoint(point);return}
+    if(tool==='select'){
+      if(pickMode){onPick(pickAt(screen),roundPoint(toWorld(screen,camera,size.width,size.height)));return}
+      selectionRef.current={pointerId:ev.pointerId,from:screen,shift:ev.shiftKey,dragging:false}
+      ev.currentTarget.setPointerCapture(ev.pointerId)
+      ev.preventDefault()
+    }else{
+      const layer=doc.layers.find(l=>l.id===doc.activeLayerId)
+      if(layer?.visible&&!layer.locked)onPoint(point)
+    }
+  }
+  function handlePointerUp(ev:React.PointerEvent<HTMLCanvasElement>){
+    if(drag.current?.pointerId===ev.pointerId){drag.current=null;return}
+    const selection=selectionRef.current
+    if(!selection||selection.pointerId!==ev.pointerId)return
+    selectionRef.current=null;setSelectionBox(null)
+    const end=localPosition(ev)
+    if(selection.dragging){
+      const first=toWorld(selection.from,camera,size.width,size.height)
+      const last=toWorld(end,camera,size.width,size.height)
+      onSelectMany(windowSelection(doc,first,last),selection.shift)
+    }else onSelect(pickAt(end),selection.shift)
   }
   return <div className="drawing-surface" ref={hostRef}>
-    <canvas ref={canvasRef} className="cad-canvas" aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : 'crosshair' }}
+    <canvas ref={canvasRef} className="cad-canvas" aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : selectionBox?'crosshair':'crosshair' }}
       onPointerMove={handlePointerMove} onPointerDown={handlePointerDown}
-      onPointerUp={ev => { if (drag.current?.pointerId === ev.pointerId) drag.current = null }}
-      onPointerCancel={() => { drag.current = null }}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => { drag.current = null;selectionRef.current=null;setSelectionBox(null) }}
       onContextMenu={e => e.preventDefault()}
       onAuxClick={e => e.preventDefault()}
       onWheel={e => { e.preventDefault(); onCameraChange(zoomAt(camera, e.deltaY < 0 ? 1.15 : 1 / 1.15, localPosition(e), size.width, size.height)) }} />
     <div className="canvas-label"><span className="canvas-label-mark">⌗</span> 模型空間 <span className="canvas-label-sep">/</span> TOP <span className="canvas-label-sep">/</span> 2D 線框</div>
-    <div className="canvas-guide">{pickMode?'TRIM：點擊要刪除的部分；金色虛線為裁切邊界':
+    <div className="canvas-guide">{pickLabel==='trim'?'TRIM：點擊要刪除的部分；金色虛線為裁切邊界':
+      pickLabel==='extend'?'EXTEND：點選靠近欲延伸端點的線段；金色虛線為邊界':
       offsetPreview?'OFFSET：點擊偏移方向；青色虛線為預覽':
-      '滾輪縮放 · 按住中鍵平移 · 輸入指令開始繪圖'}</div>
+      '拖曳框選：左→右完整／右→左交叉 · 滾輪縮放 · 中鍵平移'}</div>
     <div className="axis-widget"><span className="axis-y">Y</span><span className="axis-origin"/><span className="axis-x">X</span></div>
   </div>
 }

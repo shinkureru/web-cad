@@ -1,7 +1,7 @@
 import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
-const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim' | 'extend' | 'fillet' | 'chamfer'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
@@ -13,6 +13,9 @@ const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'sa
   DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
   D: 'dimstyle', DIMSTYLE: 'dimstyle',
   O: 'offset', OFFSET: 'offset', TR: 'trim', TRIM: 'trim',
+  EX: 'extend', EXTEND: 'extend',
+  F: 'fillet', FILLET: 'fillet',
+  CHA: 'chamfer', CHAMFER: 'chamfer',
   PLOT: 'plot', PRINT: 'plot',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }

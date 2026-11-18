@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   ArrowDownToLine, Box, Circle, Command, CornerDownLeft, Type, PencilRuler, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
   HelpCircle, Layers3, LockKeyhole, Minus, MousePointer2, PanelRightClose, PanelRightOpen,
-  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer, Scissors,
+  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer, Scissors, CornerUpRight, GitMerge,
   UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import CadCanvas from './components/CadCanvas'
@@ -12,6 +12,8 @@ import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
 import { offsetDocument, trimDocument } from './cad/precisionEdit'
+import { extendLine, joinLines } from './cad/advancedEditing'
+import type { CornerMode } from './cad/advancedEditing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
 import { exportDxf, importDxf } from './cad/dxf'
@@ -91,6 +93,10 @@ export default function App() {
   const [edit, setEdit] = useState<{ kind: EditTool; base: Point | null } | null>(null)
   const [offsetMode, setOffsetMode] = useState<{ sourceId: string; distance: number | null } | null>(null)
   const [trimMode, setTrimMode] = useState<{ boundaryIds: string[] } | null>(null)
+  const [extendMode,setExtendMode]=useState<{boundaryIds:string[]}|null>(null)
+  const [cornerMode,setCornerMode]=useState<CornerMode|null>(null)
+  const [filletRadius,setFilletRadius]=useState(100)
+  const [chamferDistances,setChamferDistances]=useState<[number,number]>([100,100])
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -104,7 +110,7 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.7.0：O / OFFSET 偏移、TR / TRIM 精準修剪，Esc 結束操作。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.8.0：EX 延伸、F 圓角、CHA 倒角，左右方向框選物件。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -131,6 +137,11 @@ export default function App() {
     const next = selectedIds.includes(id) ? selectedIds.filter(item => item !== id) : [...selectedIds, id]
     setSelectedIds(next); setSelectedId(next.at(-1) ?? null)
   }
+  function selectMany(ids:string[],extend:boolean) {
+    const next=extend?[...new Set([...selectedIds,...ids])]:ids
+    setSelectedIds(next);setSelectedId(next.at(-1)??null)
+    logMessage('框選：'+next.length+' 個可編輯物件（左→右完整包含；右→左交叉）。')
+  }
   function startBlockCreation() {
     const chosen = doc.entities.filter(e => selectedIds.includes(e.id))
     if (!chosen.length || chosen.some(e => !['line','polyline','rectangle','circle'].includes(e.kind)
@@ -139,6 +150,7 @@ export default function App() {
       showNotice('請 Shift+點選一個或多個未鎖定的基本圖元；目前不支援巢狀圖塊。'); return
     }
     setTool('select'); setDraft(null); setEdit(null); setBlockInsert(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockCreate({ ids: chosen.map(e => e.id), name: null })
     logMessage('BLOCK：請輸入圖塊名稱，再指定基準點（mm）。')
     inputRef.current?.focus()
@@ -159,6 +171,7 @@ export default function App() {
     if (!block) { showNotice('請先從預設圖塊庫加入圖塊，或使用 B 建立圖塊。'); return }
     if (!layer?.visible || layer.locked) { showNotice('請切換到顯示且未鎖定的圖層。'); return }
     setActiveBlockId(block.id); setTool('select'); setEdit(null); setDraft(null); setBlockCreate(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockInsert({ blockId: block.id }); logMessage(`INSERT：指定「${block.name}」的插入點（mm）。`)
     inputRef.current?.focus()
   }
@@ -167,6 +180,7 @@ export default function App() {
     if (!layer?.visible || layer.locked) { showNotice('請先切換到可編輯圖層。'); return }
     editDoc(current => installPreset(current, preset))
     setActiveBlockId(preset.id); setTool('select'); setDraft(null); setEdit(null); setBlockCreate(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockInsert({ blockId: preset.id }); logMessage(`插入預設「${preset.name}」：指定插入點。`)
     inputRef.current?.focus()
   }
@@ -194,6 +208,7 @@ export default function App() {
     const layer=doc.layers.find(l=>l.id===doc.activeLayerId)
     if(!layer?.visible || layer.locked){showNotice('目前圖層已隱藏或鎖定，無法標註。');return}
     setAnnotation({kind,text:'',points:[]})
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setTool('select');setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null);selectSingle(null)
     logMessage(kind==='text'?'TEXT：請輸入文字內容，Enter 後指定插入點。':'DIM：請指定第一個延伸線起點。')
     inputRef.current?.focus()
@@ -243,7 +258,7 @@ export default function App() {
       ||!layer?.visible||layer.locked){
       showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
     }
-    setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null)
+    setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
     setTool('select')
     logMessage('OFFSET：輸入偏移距離（mm），按 Enter；再點選要偏移的一側。')
@@ -268,7 +283,7 @@ export default function App() {
       return
     }
     setTrimMode({boundaryIds:boundaries.map(e=>e.id)})
-    setOffsetMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+    setOffsetMode(null);setExtendMode(null);setCornerMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
     setAnnotation(null);setDraft(null);setTool('select');selectSingle(null)
     logMessage('TRIM：在畫布上點選要移除的線段部分；裁切邊界保持不變。按 Esc 結束。')
   }
@@ -281,41 +296,108 @@ export default function App() {
       logMessage('TRIM 已修剪目標物件；可繼續點選其他線段，按 Esc 結束。')
     }catch(error){showNotice(error instanceof Error?error.message:'TRIM 無法完成')}
   }
+  function startExtend() {
+    const boundaries=doc.entities.filter(e=>selectedIds.includes(e.id))
+    if(!boundaries.length || boundaries.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||!['line','polyline','rectangle','circle','insert'].includes(e.kind)
+    })){showNotice('EXTEND：請先框選／Shift 多選一個或多個可見延伸邊界。');return}
+    setExtendMode({boundaryIds:boundaries.map(e=>e.id)})
+    setTrimMode(null);setOffsetMode(null);setCornerMode(null)
+    setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
+    setTool('select');selectSingle(null)
+    logMessage('EXTEND：點選目標直線要延伸的端點附近，延伸至最近有限邊界；Esc 結束。')
+  }
+  function finishPick(id:string|null,p:Point) {
+    if(extendMode){
+      if(!id){showNotice('EXTEND：請點擊直線的欲延伸端點附近。');return}
+      try{
+        const next=extendLine(doc,extendMode.boundaryIds,id,p)
+        editDoc(()=>next);logMessage('EXTEND：已延伸至最近有效邊界，可繼續點選其他線段。')
+      }catch(error){showNotice(error instanceof Error?error.message:'EXTEND 無法完成')}
+      return
+    }
+    finishTrim(id,p)
+  }
+  function startCorner(mode:CornerMode){
+    const lines=doc.entities.filter(e=>selectedIds.includes(e.id))
+    if(lines.length!==2||lines.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return e.kind!=='line'||!layer?.visible||layer.locked
+    })){showNotice('請先 Shift／框選恰好兩條可編輯 LINE，再執行 FILLET／CHAMFER。');return}
+    setCornerMode(mode);setExtendMode(null);setOffsetMode(null);setTrimMode(null)
+    setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null);setTool('select')
+    logMessage(mode==='fillet'
+      ?'FILLET：輸入半徑 mm（0 代表直角接合）；Enter 套用兩線圓角。'
+      :'CHAMFER：輸入兩側倒角距離「100,150」（或單值 100）；Enter 套用。')
+    inputRef.current?.focus()
+  }
+  function finishCorner(raw:string) {
+    if(!cornerMode)return
+    const v=raw.trim()
+    const matches=cornerMode==='fillet'
+      ? /^([0-9]+(?:\.[0-9]+)?)$/.exec(v)
+      : /^([0-9]+(?:\.[0-9]+)?)(?:\s*,\s*([0-9]+(?:\.[0-9]+)?))?$/.exec(v)
+    const a=matches?Number(matches[1]):NaN
+    const b=cornerMode==='fillet'?a:Number(matches?.[2]??matches?.[1])
+    if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<0||a>1e6||b>1e6){
+      showNotice('請輸入有效的非負半徑／倒角距離（最多 1,000,000 mm）。');return
+    }
+    try{
+      if(selectedIds.length!==2)throw new Error('請重新選擇兩條 LINE')
+      const result=joinLines(doc,[selectedIds[0],selectedIds[1]],cornerMode,a,b,uid())
+      if(cornerMode==='fillet')setFilletRadius(a)
+      else setChamferDistances([a,b])
+      editDoc(()=>result);setCornerMode(null);selectSingle(null)
+      logMessage('已建立'+(cornerMode==='fillet'?'圓角聚合線（細分線段）':'倒角直線')+'，兩條來源線已修剪。')
+    }catch(error){showNotice(error instanceof Error?error.message:'角隅編輯無法完成')}
+  }
   function startTool(next: Tool) {
-    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null); selectSingle(null)
+    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); selectSingle(null)
     if (next !== 'select') lastTool.current = next
     logMessage(next === 'select' ? '選取物件，按 Delete 刪除。' : `${tools.find(t => t.id === next)?.label}：指定第一點。`)
   }
   function startEdit(kind: EditTool) {
-    const entity = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = entity && doc.layers.find(l => l.id === entity.layerId)
-    if (!entity || !sourceLayer?.visible || sourceLayer.locked) {
-      showNotice('請先選取可編輯的物件（圖層須顯示且未鎖定）。'); return
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const entities=doc.entities.filter(e=>ids.includes(e.id))
+    if(!ids.length||entities.length!==ids.length||entities.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){
+      showNotice('MOVE/COPY/ROTATE：請先選取一個或多個未鎖定的可見物件。');return
     }
-    setTool('select'); setDraft(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null);setOffsetMode(null);setTrimMode(null)
-    setEdit({ kind, base: null })
-    logMessage(`${editTools.find(t => t.id === kind)?.label}：指定基準點。`)
+    setTool('select');setDraft(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
+    setEdit({kind,base:null})
+    logMessage((editTools.find(t=>t.id===kind)?.label??kind)+'：已選 '+ids.length+' 個物件，指定基準點。')
   }
-  function finishEdit(point: Point, degrees?: number) {
-    if (!edit || !selectedId) return
-    if (!edit.base) {
-      setEdit({ ...edit, base: point })
-      logMessage(edit.kind === 'rotate' ? '旋轉：指定角度（度），或點選方向。' : '指定第二點（可以輸入 @3000,0）。')
+  function finishEdit(point:Point,degrees?:number){
+    if(!edit)return
+    if(!edit.base){
+      setEdit({...edit,base:point})
+      logMessage(edit.kind==='rotate'?'指定旋轉角度（度）或點選方向。':'指定第二點，例如 @3000,0。')
       return
     }
-    const source = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = source && doc.layers.find(l => l.id === source.layerId)
-    if (!source || !sourceLayer?.visible || sourceLayer.locked) { setEdit(null); showNotice('物件已不存在或圖層已鎖定。'); return }
-    const angle = degrees ?? Math.atan2(point.y - edit.base.y, point.x - edit.base.x) * 180 / Math.PI
-    const offset = { x: point.x - edit.base.x, y: point.y - edit.base.y }
-    const result = edit.kind === 'rotate' ? rotateEntity(source, edit.base, angle) : translateEntity(source, offset)
-    if (edit.kind === 'copy') {
-      const clone = { ...result, id: uid() }
-      editDoc(current => ({ ...current, entities: [...current.entities, clone] }))
-      selectSingle(clone.id)
-    } else editDoc(current => ({ ...current, entities: current.entities.map(e => e.id === source.id ? result : e) }))
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const sources=doc.entities.filter(e=>ids.includes(e.id))
+    if(!sources.length||sources.length!==ids.length||sources.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){setEdit(null);showNotice('其中一個物件已不存在，或圖層已鎖定。');return}
+    const angle=degrees??Math.atan2(point.y-edit.base.y,point.x-edit.base.x)*180/Math.PI
+    const offset={x:point.x-edit.base.x,y:point.y-edit.base.y}
+    const transformed=sources.map(e=>edit.kind==='rotate'
+      ? rotateEntity(e,edit.base!,angle):translateEntity(e,offset))
+    if(edit.kind==='copy'){
+      const clones=transformed.map(e=>({...e,id:uid()}))
+      editDoc(current=>({...current,entities:[...current.entities,...clones]}))
+      setSelectedIds(clones.map(e=>e.id));setSelectedId(clones.at(-1)?.id??null)
+    }else{
+      const byId=new Map(transformed.map(e=>[e.id,e]))
+      editDoc(current=>({...current,entities:current.entities.map(e=>byId.get(e.id)??e)}))
+    }
     setEdit(null)
-    logMessage(`${editTools.find(t => t.id === edit.kind)?.label}完成。`)
+    logMessage((editTools.find(t=>t.id===edit.kind)?.label??edit.kind)+'完成：'+sources.length+' 個物件。')
   }
   function editSelectedEntity(changes: Partial<Pick<CadEntity, 'layerId' | 'color' | 'lineweight' | 'linetype'>>) {
     if (!selectedId) return
@@ -354,13 +436,19 @@ export default function App() {
     editDoc(current => ({ ...current, entities: [...current.entities, entity] }))
     setDraft(null); logMessage('聚合線已完成。')
   }
-  function deleteSelected() {
-    if (!selectedId) { showNotice('請先選取物件。'); return }
-    const source = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = source && doc.layers.find(l => l.id === source.layerId)
-    if (!sourceLayer?.visible || sourceLayer.locked) { showNotice('此物件所在圖層無法編輯。'); return }
-    editDoc(current => ({ ...current, entities: current.entities.filter(e => e.id !== selectedId) }))
-    selectSingle(null); logMessage('已刪除所選物件。')
+  function deleteSelected(){
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const entities=doc.entities.filter(e=>ids.includes(e.id))
+    if(!ids.length||entities.length!==ids.length){
+      showNotice('請先選取要刪除的物件。');return
+    }
+    if(entities.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){showNotice('含有已鎖定或隱藏的圖層，無法整批刪除。');return}
+    const set=new Set(ids)
+    editDoc(current=>({...current,entities:current.entities.filter(e=>!set.has(e.id))}))
+    selectSingle(null);logMessage('已刪除 '+ids.length+' 個所選物件。')
   }
   function fitView() {
     if (!doc.entities.length) { setCamera({ x: 0, y: 0, scale: .2 }); return }
@@ -381,6 +469,15 @@ export default function App() {
   }
   const runCommand = (text: string) => {
     const raw = text.trim()
+    if(cornerMode){
+      if(findCommand(raw)==='cancel'){setCornerMode(null);return}
+      finishCorner(raw||String(cornerMode==='fillet'?filletRadius:chamferDistances.join(',')))
+      return
+    }
+    if(extendMode){
+      if(!raw||findCommand(raw)==='cancel'){setExtendMode(null);logMessage('已結束 EXTEND。');return}
+      showNotice('EXTEND：請在畫布點擊直線欲延伸的端點附近；Esc 結束。');return
+    }
     if(offsetMode){
       if(findCommand(raw)==='cancel'){setOffsetMode(null);logMessage('已結束 OFFSET。');return}
       if(offsetMode.distance===null||(/^\d+(?:\.\d+)?$/.test(raw) && Number(raw)>0)){
@@ -462,6 +559,9 @@ export default function App() {
       case 'plot': setPlotOpen(true); return
       case 'offset': startOffset(); return
       case 'trim': startTrim(); return
+      case 'extend': startExtend(); return
+      case 'fillet': startCorner('fillet'); return
+      case 'chamfer': startCorner('chamfer'); return
       case 'block': startBlockCreation(); return
       case 'insert': beginInsert(); return
       case 'explode': explodeSelected(); return
@@ -475,6 +575,16 @@ export default function App() {
       const target = ev.target as HTMLElement | null
       const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
       if (ev.isComposing) return
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a' && !editing) {
+        ev.preventDefault()
+        const ids=doc.entities.filter(e=>{
+          const l=doc.layers.find(layer=>layer.id===e.layerId)
+          return l?.visible && !l.locked
+        }).map(e=>e.id)
+        setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
+        logMessage('已選取 '+ids.length+' 個可編輯物件。')
+        return
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') {
         ev.preventDefault(); setPlotOpen(true); return
       }
@@ -484,7 +594,7 @@ export default function App() {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') {
         ev.preventDefault(); dispatch({ type: 'redo' }); setDraft(null); return
       }
-      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
+      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
       if (ev.key === 'F3') { ev.preventDefault(); setOsnap(old => !old); return }
       if (ev.key === 'F8') { ev.preventDefault(); setOrtho(old => !old); return }
       if (!editing && ev.key === 'Delete') { ev.preventDefault(); deleteSelected(); return }
@@ -557,7 +667,11 @@ export default function App() {
   const selectedEntity = doc.entities.find(e => e.id === selectedId)
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
-  const title = offsetMode
+  const title = cornerMode
+    ? cornerMode==='fillet'?'圓角半徑 mm（預設 '+filletRadius+'）'
+      :'倒角距離 mm（預設 '+chamferDistances.join(',')+'）'
+    : extendMode?'點選直線欲延伸的端點，Esc 結束'
+    : offsetMode
     ? offsetMode.distance===null?'輸入偏移距離（mm）':'點選偏移側或輸入 X,Y；Esc 結束'
     : trimMode?'點選要修剪的線段；Esc 結束'
     : annotation
@@ -579,7 +693,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.7.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.8.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -593,6 +707,9 @@ export default function App() {
         <div className="rail-separator"/>
         <button className={'rail-tool '+(offsetMode?'is-active':'')} title="O / OFFSET — 選取圖元後偏移指定毫米距離" onClick={startOffset}><Copy size={20}/><span>偏移 O</span></button>
         <button className={'rail-tool '+(trimMode?'is-active':'')} title="TR / TRIM — Shift 多選邊界後修剪目標" onClick={startTrim}><Scissors size={20}/><span>修剪 TR</span></button>
+        <button className={'rail-tool '+(extendMode?'is-active':'')} title="EX / EXTEND — 選擇邊界後延伸直線" onClick={startExtend}><CornerUpRight size={20}/><span>延伸 EX</span></button>
+        <button className={'rail-tool '+(cornerMode==='fillet'?'is-active':'')} title="F / FILLET — 選兩條直線再輸入半徑" onClick={()=>startCorner('fillet')}><Circle size={20}/><span>圓角 F</span></button>
+        <button className={'rail-tool '+(cornerMode==='chamfer'?'is-active':'')} title="CHA / CHAMFER — 選兩條直線再輸入倒角距離" onClick={()=>startCorner('chamfer')}><GitMerge size={20}/><span>倒角 CHA</span></button>
         <button className="rail-tool" title="B / BLOCK — 將 Shift 多選圖元建立成圖塊" disabled={!selectedIds.length} onClick={startBlockCreation}><Box size={20}/><span>建立圖塊</span></button>
         <button className="rail-tool" title="I / INSERT — 插入圖塊" onClick={() => beginInsert()}><Copy size={20}/><span>插入圖塊</span></button>
         <button className="rail-tool" title="X / EXPLODE — 分解所選圖塊" disabled={selectedEntity?.kind !== 'insert'} onClick={explodeSelected}><Layers3 size={20}/><span>分解圖塊</span></button>
@@ -613,7 +730,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onPick={finishTrim} trimBoundaryIds={trimMode?.boundaryIds ?? []} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onSelectMany={selectMany} onPick={finishPick} trimBoundaryIds={trimMode?.boundaryIds ?? extendMode?.boundaryIds ?? []} pickLabel={extendMode?'extend':trimMode?'trim':null} cornerMode={cornerMode} cornerPreviewValue={commandText} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode||!!extendMode} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
           {exchangeReport && <aside className="exchange-report" role="status" aria-label="檔案交換結果">
             <header><strong>{exchangeReport.title}</strong>
@@ -740,7 +857,11 @@ export default function App() {
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.7.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.8.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+      ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
+      ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角使用細分聚合線'],
+      ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
+      ['框選', '左→右完全框住才選；右→左碰到即選；Shift 可累積框選，Ctrl+A 選所有可編輯圖元'],
       ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
       ['TR / TRIM', 'Shift+點選一個或多個切割邊界 → TR → 點擊要刪除的直線／開放聚合線部分'],
       ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
