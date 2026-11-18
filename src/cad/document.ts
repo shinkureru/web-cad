@@ -2,6 +2,7 @@ import type { BlockDefinition, CadDocument, CadEntity, CadLayer, DimensionStyle,
 
 import { DEFAULT_DIMENSION_STYLES } from './annotations'
 import { arcSweep } from './arcs'
+import { reconcileCurveAssociations } from './associations'
 
 export const STORAGE_KEY = 'web-cad:v1:document'
 export const uid = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -56,6 +57,9 @@ function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
       && Number.isFinite(e.radius)&&e.radius>0&&e.radius<=1e9
       && ['radius','diameter','arcLength','angle'].includes(e.measure)
       && typeof e.styleId==='string'
+      && (e.sourceId===undefined||(typeof e.sourceId==='string'&&e.sourceId.length>0))
+      && (e.orphaned===undefined||typeof e.orphaned==='boolean')
+      && !(e.sourceId&&e.orphaned)
       && (e.measure==='radius'||e.measure==='diameter'
         || (Number.isFinite(e.startAngle)&&Number.isFinite(e.endAngle)
           && e.startAngle!==undefined&&e.endAngle!==undefined
@@ -108,6 +112,13 @@ export function parseDocument(input: unknown): CadDocument {
     || d.entities.some(e => e.kind === 'insert' && !blockIds.has(e.blockId))) {
     throw new Error('圖塊參照或圖元 ID 無效')
   }
+  // No dangling or incompatible source associations in user-provided JSON.
+  const byId=new Map(d.entities.map(e=>[e.id,e]))
+  if(d.entities.some(e=>e.kind==='curveDimension'&&e.sourceId&&(()=>{
+    const source=byId.get(e.sourceId)
+    return !source||(source.kind!=='circle'&&source.kind!=='arc')||
+      ((e.measure==='angle'||e.measure==='arcLength')&&source.kind!=='arc')
+  })()))throw new Error('曲線標註來源參照無效，請檢查是否遺失或被替換')
   const styles = d.dimensionStyles ?? DEFAULT_DIMENSION_STYLES
   if (!Array.isArray(styles) || !styles.length || styles.length > 50 || !styles.every(isDimensionStyle)
     || new Set(styles.map(s => s.id)).size !== styles.length
@@ -132,7 +143,8 @@ export function documentReducer(state: History, action: DocAction): History {
     return { past: [...state.past, state.present].slice(-100), present: state.future[0], future: state.future.slice(1) }
   }
   if (action.type !== 'edit') return state
-  const next = action.update(state.present)
-  if (next === state.present) return state
+  const updated = action.update(state.present)
+  if (updated === state.present) return state
+  const next = reconcileCurveAssociations(state.present,updated)
   return { past: [...state.past, state.present].slice(-100), present: next, future: [] }
 }
