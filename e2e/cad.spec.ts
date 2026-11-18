@@ -38,7 +38,7 @@ async function waitEntities(page:Page,count:number){
   }).toBe(count)
 }
 async function canvasCenter(page:Page){
-  const box=await page.getByRole('img',{name:'CAD 繪圖畫布'}).boundingBox()
+  const box=await page.locator('canvas.cad-canvas').boundingBox()
   // Some Chromium versions expose canvas as img and some as a bare canvas element.
   if(!box)throw Error('Canvas is not visible')
   return {x:box.x+box.width/2,y:box.y+box.height/2}
