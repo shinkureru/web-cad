@@ -1,4 +1,5 @@
-import type { Camera, CadEntity, Point, Snap } from './types'
+import type { Camera, CadEntity, CadPrimitive, Point, Snap } from './types'
+import { arcDistance, arcPoint, arcPrimitiveIntersections } from './arcs'
 import { dimensionGeometry, getDimensionStyle } from './annotations'
 
 export const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y)
@@ -37,6 +38,12 @@ export function entitySnaps(entity: CadEntity): Snap[] {
       return [...corners.map(end), ...corners.map((p, i) => mid(p, corners[(i + 1) % 4]))]
     }
     case 'circle': return [{ point: entity.center, kind: '圓心' }]
+    case 'arc': return [
+      {point: arcPoint(entity,0),kind:'端點'},
+      {point: arcPoint(entity,1),kind:'端點'},
+      {point: arcPoint(entity,.5),kind:'中點'},
+      {point: entity.center,kind:'圓心'}
+    ]
     case 'insert': return [] // Caller expands block references using the document before snapping.
     case 'text': return [{ point: entity.position, kind: '端點' }]
     case 'dimension': return [{point:entity.start,kind:'端點'},{point:entity.end,kind:'端點'}]
@@ -75,6 +82,7 @@ export function hitTest(p: Point, entity: CadEntity): number {
       return Math.min(...corners.map((v, i) => segmentDistance(p, v, corners[(i + 1) % 4])))
     }
     case 'circle': return Math.abs(distance(p, entity.center) - entity.radius)
+    case 'arc': return arcDistance(p,entity)
     case 'insert': return Infinity // Hit testing of inserts is on flattened primitives.
     case 'text': {
       // Approximate text hit testing in local text coordinates (font metrics depend on the browser).
@@ -110,7 +118,7 @@ export function entitySegments(entity: CadEntity): Segment[] {
       const a = entity.start, b = entity.end
       return segments([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true)
     }
-    case 'circle': case 'insert': case 'text': return []
+    case 'circle': case 'arc': case 'insert': case 'text': return []
     case 'dimension': return [] // Dimensions do not generate drawing intersection snaps.
   }
 }
@@ -161,6 +169,7 @@ export function circleCircleIntersections(a: { center: Point; radius: number }, 
 export function nearestIntersection(pointer: Point, entities: CadEntity[], visibleLayers: Set<string>, tolerance: number): Snap | null {
   const boundsNear = (entity: CadEntity): boolean => {
     if (entity.kind === 'circle') return Math.abs(distance(pointer, entity.center) - entity.radius) <= tolerance
+    if (entity.kind === 'arc') return arcDistance(pointer,entity) <= tolerance
     return entitySegments(entity).some(({ a, b }) => {
       const minX = Math.min(a.x, b.x) - tolerance, maxX = Math.max(a.x, b.x) + tolerance
       const minY = Math.min(a.y, b.y) - tolerance, maxY = Math.max(a.y, b.y) + tolerance
@@ -175,7 +184,11 @@ export function nearestIntersection(pointer: Point, entities: CadEntity[], visib
     for (let j = i + 1; j < candidates.length; j++) {
       const b = candidates[j], bSegments = entitySegments(b)
       const points: Point[] = []
-      if (a.kind === 'circle' && b.kind === 'circle') points.push(...circleCircleIntersections(a, b))
+      const primitive=(e:CadEntity):e is CadPrimitive =>
+        e.kind==='line'||e.kind==='rectangle'||e.kind==='polyline'||e.kind==='circle'||e.kind==='arc'
+      if(a.kind==='arc'&&primitive(b)) points.push(...arcPrimitiveIntersections(a,b))
+      else if(b.kind==='arc'&&primitive(a)) points.push(...arcPrimitiveIntersections(b,a))
+      else if (a.kind === 'circle' && b.kind === 'circle') points.push(...circleCircleIntersections(a, b))
       else if (a.kind === 'circle') for (const seg of bSegments) points.push(...segmentCircleIntersections(seg, a.center, a.radius))
       else if (b.kind === 'circle') for (const seg of aSegments) points.push(...segmentCircleIntersections(seg, b.center, b.radius))
       else for (const sa of aSegments) for (const sb of bSegments) {
