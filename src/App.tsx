@@ -8,11 +8,14 @@ import {
 import CadCanvas from './components/CadCanvas'
 import PlotDialog from './components/PlotDialog'
 import CadSettingsDialog from './components/CadSettingsDialog'
+import GeometryProperties from './components/GeometryProperties'
 import { findCommand, parseLengthInput, parsePointInput, unitToMm } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { canRedirectPlainKey, loadPreferences, PREF_STORAGE_KEY, shouldSubmitCommandKey, shouldSubmitInCommandInput } from './cad/preferences'
 import type { CadPreferences } from './cad/preferences'
 import { distance } from './cad/geometry'
+import { commitGrip, commitGeometry } from './cad/grips'
+import type { GeometryField } from './cad/grips'
 import { rotateEntity, translateEntity } from './cad/editing'
 import { offsetDocument, trimDocument } from './cad/precisionEdit'
 import { extendLine, joinLines } from './cad/advancedEditing'
@@ -117,7 +120,7 @@ export default function App() {
   const [commandText, setCommandText] = useState('')
   const [preferences, setPreferences] = useState<CadPreferences>(loadPreferences)
   const [settingsOpen,setSettingsOpen]=useState(false)
-  const [log, setLog] = useState<string[]>(['Web CAD v1.1.0：空白鍵可確認指令；支援自訂快捷代碼及 cm/mm 精準輸入。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v1.2.0：精確長度／角度、動態尺寸預覽、物件夾點與垂足鎖點。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -404,6 +407,25 @@ export default function App() {
     }
     setEdit(null)
     logMessage((editTools.find(t=>t.id===edit.kind)?.label??edit.kind)+'完成：'+sources.length+' 個物件。')
+  }
+  function finishGripEdit(entityId:string,gripId:string,p:Point){
+    try{
+      const updated=commitGrip(doc,entityId,gripId,p)
+      editDoc(()=>updated)
+      logMessage('已更新物件夾點 '+gripId+'；Ctrl+Z 可一次復原。')
+    }catch(error){showNotice(error instanceof Error?error.message:'夾點編輯失敗')}
+  }
+  function finishGeometryEdit(field:GeometryField,raw:string,isAngle:boolean){
+    if(!selectedId)return
+    const value=isAngle?Number(raw):parseLengthInput(raw,preferences.inputUnit)
+    if(raw.trim()===''||value===null||!Number.isFinite(value)){
+      showNotice('請輸入有效的幾何數值（例如 350cm、125mm）。');return
+    }
+    try{
+      const updated=commitGeometry(doc,selectedId,field,value)
+      editDoc(()=>updated)
+      logMessage('已精確設定 '+field+'，模型儲存單位 mm。')
+    }catch(error){showNotice(error instanceof Error?error.message:'精確幾何編輯失敗')}
   }
   function editSelectedEntity(changes: Partial<Pick<CadEntity, 'layerId' | 'color' | 'lineweight' | 'linetype'>>) {
     if (!selectedId) return
@@ -723,7 +745,7 @@ export default function App() {
     : annotation
     ? annotation.kind==='text' ? (annotation.text?'指定文字插入點（X,Y）':'輸入要插入的繁體中文文字')
     : ['指定第一個標註點','指定第二個標註點','指定標註線位置'][annotation.points.length]
-    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按確認鍵' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，空白鍵或 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C），空白鍵確認'
+    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按確認鍵' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點（可輸入 350cm<45），空白鍵或 Enter 完成聚合線' : draft ? '指定下一點 / 輸入 350cm 或 350cm<45' : '輸入指令（例如 L、PL、REC、C），空白鍵確認'
 
   return <div className="app">
     <header className="app-header">
@@ -740,7 +762,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.1.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.2.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -781,7 +803,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onSelectMany={selectMany} onPick={finishPick} trimBoundaryIds={trimMode?.boundaryIds ?? extendMode?.boundaryIds ?? []} pickLabel={extendMode?'extend':trimMode?'trim':null} cornerMode={cornerMode} cornerPreviewValue={commandText} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode||!!extendMode} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onSelectMany={selectMany} onGripMove={finishGripEdit} inputUnit={preferences.inputUnit} onPick={finishPick} trimBoundaryIds={trimMode?.boundaryIds ?? extendMode?.boundaryIds ?? []} pickLabel={extendMode?'extend':trimMode?'trim':null} cornerMode={cornerMode} cornerPreviewValue={commandText} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode||!!extendMode} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
           {exchangeReport && <aside className="exchange-report" role="status" aria-label="檔案交換結果">
             <header><strong>{exchangeReport.title}</strong>
@@ -826,10 +848,10 @@ export default function App() {
         <div className="info-block">{selectedEntity ? <>
           <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', arc: '圓弧', insert: '圖塊參照', text: '文字', dimension: '尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
           <p>ID　{selectedEntity.id.slice(0, 8)}　{selectedLayer?.locked ? '（已鎖定）' : ''}</p>
+          {selectedIds.length===1 && <GeometryProperties entity={selectedEntity}
+            unit={preferences.inputUnit} disabled={!selectedLayer?.visible||!!selectedLayer?.locked}
+            onCommit={finishGeometryEdit}/>}
           {selectedEntity.kind==='arc' && <div className="annotation-entity-controls">
-            <label>圓弧半徑（mm）<input type="number" aria-label="圓弧半徑" min={0.001} max={1000000000} step={1}
-              value={selectedEntity.radius} disabled={selectedLayer?.locked||!selectedLayer?.visible}
-              onChange={e=>{const v=Number(e.target.value);if(v>=.001&&v<=1e9)updateSelectedEntity({radius:v})}}/></label>
             <label>起始角度（°）<input type="number" aria-label="圓弧起始角度" step={1}
               value={selectedEntity.startAngle} disabled={selectedLayer?.locked||!selectedLayer?.visible}
               onChange={e=>{const v=Number(e.target.value);if(Number.isFinite(v)){
@@ -938,7 +960,7 @@ export default function App() {
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {(cursor.x/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)} <span className="status-sep">·</span> Y {(cursor.y/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">輸入 {preferences.inputUnit==='cm'?'公分 cm':'毫米 mm'} ／ 模型 mm</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>} 
     {settingsOpen && <CadSettingsDialog preferences={preferences} onApply={setPreferences} onClose={() => setSettingsOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.1.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.2.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
@@ -951,6 +973,10 @@ export default function App() {
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
+      ['動態尺寸輸入', '指定起點後，移動滑鼠可看到長度／角度；輸入 350cm<45 或 350cm 直接精確繪製'],
+      ['夾點編輯', '選取單一圖元後拖曳藍色控制點；線段端點、聚合線頂點、圓半徑／圓心等可調整'],
+      ['精確屬性', '選取直線／矩形／圓，於右側精確輸入長度、起終點、半徑或角度；會保留 mm 模型精度'],
+      ['OSNAP 垂足／象限', 'F3 可切換鎖點；畫線時能吸附線段垂足、圓與圓弧象限點'],
       ['L / LINE', '直線'], ['W / WALL', '單段等厚雙線牆（牆厚工具列設定）'], ['PL / PLINE', '聚合線（Enter 完成）'], ['REC / RECTANG', '矩形'], ['C / CIRCLE', '圓形'],
       ['B / BLOCK', 'Shift+點選多個基本圖元 → 輸入名稱 → 指定基準點'], ['I / INSERT', '插入圖面圖塊庫中的圖塊'], ['X / EXPLODE', '分解已選取圖塊參照'],
       ['Shift+點選', '加入或移除多重選取（B 建立圖塊）'],
