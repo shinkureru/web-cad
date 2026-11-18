@@ -6,3 +6,7 @@ dist/
 *.local
 coverage/
 *.tsbuildinfo
+
+# Playwright real-browser test outputs
+playwright-report/
+test-results/

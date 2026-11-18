@@ -1,6 +1,34 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v0.9.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v1.0.0 ｜ Repo：`shinkureru/web-cad`
+
+## v1.0.0 — Chromium 瀏覽器 E2E 與 CIRCLE→ARC 修剪里程碑
+
+- **GitHub 協作**：PR #9 已於 main 合併；從 main SHA 359680765da7da963eb56f57ebaa964be58cbe17 建立獨立分支 feat/v1.0.0-browser-e2e-circle-trim → PR #10。只透過 PR 提交，使用者自行驗收／Merge；**不直接修改 main**。
+- **定位**：版本名稱 v1.0.0 代表首個涵蓋 Chromium 真實瀏覽器操作的回歸里程碑，**不表示達到 AutoCAD 商用軟體或正式施工圖認證**。原生 .webcad.json 的版本欄位仍為 1；既有圖紙向下支援。
+- **幾何**：src/cad/arcs.ts 新增 circlePrimitiveIntersections 和 trimCircle；求完整 CIRCLE 與有限 LINE、POLYLINE、RECT、CIRCLE、ARC 相交的解析式交點，依點擊位置刪除圓周上相鄰兩交點間的區段，剩餘轉成**一條真正 ARC**。來源 ID、圓心、半徑、圖層、顏色／線粗／線型保存。
+- **保護**：至少兩個不同有效交點；切線單一交點、共圓重合、無限線延伸卻實際不交會、圓心誤點、圖層隱藏／鎖定一律拒絕，不破壞原圖；每筆 TRIM 是一個 Undo 步驟。
+- **核心對接**：src/cad/precisionEdit.ts 的 trimDocument 現在接受 CIRCLE 目標；其餘 ARC、LINE、開放 POLYLINE TRIM 維持既有行為。新 ARC 沿用 v0.9.0 的 DXF AC1015 ARC 與 SVG/PLOT 出圖能力。
+- **單元測試**：src/cad/circleTrim.test.ts 新增 11 項完整圓解析式裁切、有限交點、兩圓相交、單一相切拒絕、圖層保護、JSON/DXF 與 Undo/Redo 測試。總單元數為 **124 項**。
+- **真瀏覽器 E2E**：新增 @playwright/test、playwright.config.ts、e2e/cad.spec.ts；4 條真 Chromium 流程：實際指令列 LINE/ARC、Undo/Redo、JSON 下載與 GUI 匯入、畫布 window/crossing 拖曳、多選 MOVE、Shift 選 TRIM 邊界點擊整圓轉 ARC、DXF 匯出並由 GUI 重新匯入、PLOT 對話框。
+- **GitHub Actions**：.github/workflows/browser-e2e.yml：PR/main 觸發，安裝 headless Chromium、跑 npm run test:e2e，失敗時保留 trace／截圖／HTML。修正 Vite 6 與 Vitest 2 的型別版本衝突：vite.config.ts 保留 Vite 設定，另新增 vitest.config.ts 限定只跑 src/**/*.test.ts。
+- **版本及文件**：package.json 設為 1.0.0；README、docs/ARC_NATIVE.md、docs/PRECISION_EDITING.md 更新，新增 docs/BROWSER_E2E.md 說明完整流程／注意事項，.gitignore 忽略 Playwright 報告。
+- **驗證記錄**：在 PR #10 分支已確認 124/124 Vitest 單元測試、TypeScript/Vite 正式建置與 4/4 Chromium E2E 真瀏覽器流程成功。舊 DXF ezdxf 與 A3 PDF 物理單位流程未因本批變更格式，但仍應以該 workflow 重新跑或人工比對關鍵圖紙。
+
+### v1.0.0 Merge 前後驗收
+
+1. 檢查最新 HEAD 對應 GitHub Actions 的 Build, test and deploy 與 Chromium browser E2E smoke 兩個 workflow **均為 success**，不只看舊版綠燈；本批保持 PR #10 開啟等待使用者 Merge。
+2. 模型空間 CIRCLE 圓心 (2400,1500)、R500，兩條 x=2150 / x=2650 的垂直裁切線：Shift 選線 → TR → 點頂端 (2400,2000)，原 CIRCLE 應變單一 ARC，起角 120°、終角 60°（300° 大弧）；兩條邊界保留。
+3. 嘗試只有一個切點的切線、未與圓相交的短線及鎖定／隱藏圖層，必須拒絕且不改圖。測試 Undo 一次回到 CIRCLE，再 Redo 回 ARC。
+4. 桌面真實 Chromium 框選：左→右需完整包含、右→左交叉即選；多選 2–3 個物件移動後一次 Undo 還原；Escape 可離開 TRIM。
+5. 從真實介面下載／匯入 JSON 主檔及 DXF 2000；在 Autodesk AutoCAD／LibreCAD/QCAD **人工**開啟，確認 CIRCLE 剩餘是可編輯的 ARC，半徑、角度、圖層與印出比例不變。
+6. Safari、Firefox、行動觸控、繁體中文字型替代、實際印表機和工程圖 DWG 仍未通過自動化，不可當作施工定稿工具。
+
+### v1.1.0 建議
+
+優先依使用者 v1.0.0 合併測試回饋修正指令列／畫布 UX，再實作弧長／角度／半徑標註、曲線端點夾點編輯與 LWPOLYLINE bulge；評估增加跨瀏覽器 E2E。維持「完成一批 → 使用者 Merge → 再開下一批」原則。
+
+---
 
 ## v0.9.0 — 原生 ARC、DXF ARC 與三點圓弧修剪
 

@@ -2,7 +2,7 @@
  * Native DXF ARC uses degrees from +X; sweep is (end-start+360)%360.
  * No zero-sweep or full-circle arcs (use CIRCLE for full circles).
  */
-import type { ArcEntity, CadPrimitive, Point } from './types'
+import type { ArcEntity, CadPrimitive, CircleEntity, Point } from './types'
 const DEG = Math.PI / 180
 const EPS = 1e-8
 const rounded=(n:number)=>Math.round(n*1000)/1000
@@ -132,4 +132,91 @@ export function trimArc(arc:ArcEntity,cutters:CadPrimitive[],click:Point,newId:(
     startAngle:normalizeAngle(rounded(arc.startAngle+a*sweep)),
     endAngle:normalizeAngle(rounded(arc.startAngle+b*sweep))
   }))
+}
+
+
+/**
+ * TRIM a full CIRCLE into one open native ARC. All cutting boundaries are
+ * finite; tangent-only or one-point crossings do not define a removable span.
+ * A click removes exactly one circular interval between adjacent boundary hits.
+ * The complement of that interval remains one connected CCW ARC.
+ */
+export function circlePrimitiveIntersections(circle:CircleEntity,cutter:CadPrimitive):Point[]{
+  const c=circle.center,r=circle.radius
+  if(cutter.kind==='circle'||cutter.kind==='arc'){
+    // Two analytic circles, without introducing a fake 359.999° ARC.
+    const other=cutter.center,rr=cutter.radius
+    const dx=other.x-c.x,dy=other.y-c.y,d=Math.hypot(dx,dy)
+    if(d<EPS||d>r+rr+1e-7||d<Math.abs(r-rr)-1e-7)return []
+    const along=(r*r-rr*rr+d*d)/(2*d)
+    const h2=r*r-along*along
+    if(h2< -1e-7)return []
+    const h=Math.sqrt(Math.max(0,h2))
+    const mx=c.x+dx*along/d,my=c.y+dy*along/d
+    const candidates=[
+      {x:mx-dy*h/d,y:my+dx*h/d},
+      {x:mx+dy*h/d,y:my-dx*h/d}
+    ]
+    return candidates.filter(p=>cutter.kind!=='arc'||pointOnArc(cutter,p,.005))
+      .reduce<Point[]>((result,p)=>{
+        if(!result.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<.001))result.push(roundedPoint(p))
+        return result
+      },[])
+  }
+  const vertices:Point[]=cutter.kind==='line'?[cutter.start,cutter.end]
+    :cutter.kind==='polyline'?cutter.points
+    :cutter.kind==='rectangle'?[
+      cutter.start,{x:cutter.end.x,y:cutter.start.y},
+      cutter.end,{x:cutter.start.x,y:cutter.end.y},cutter.start
+    ]:[]
+  const points:Point[]=[]
+  for(let i=1;i<vertices.length;i++){
+    const a=vertices[i-1],b=vertices[i],dx=b.x-a.x,dy=b.y-a.y
+    const A=dx*dx+dy*dy
+    if(A<EPS)continue
+    const qx=a.x-c.x,qy=a.y-c.y
+    const B=2*(qx*dx+qy*dy),C=qx*qx+qy*qy-r*r
+    const discriminant=B*B-4*A*C
+    if(discriminant< -1e-7)continue
+    const sq=Math.sqrt(Math.max(0,discriminant))
+    for(const t of [(-B-sq)/(2*A),(-B+sq)/(2*A)]){
+      if(t< -1e-8||t>1+1e-8)continue
+      const p={x:a.x+dx*t,y:a.y+dy*t}
+      if(!points.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<.001))points.push(roundedPoint(p))
+    }
+  }
+  return points
+}
+
+export function trimCircle(circle:CircleEntity,cutters:CadPrimitive[],click:Point):ArcEntity[]{
+  if(!Number.isFinite(circle.radius)||circle.radius<=0)
+    throw new Error('CIRCLE 半徑必須大於零')
+  const radiusAtClick=Math.hypot(click.x-circle.center.x,click.y-circle.center.y)
+  const limit=Math.min(Math.max(circle.radius*.05,1),Math.max(circle.radius*.2,15))
+  if(Math.abs(radiusAtClick-circle.radius)>limit)
+    throw new Error('請點擊靠近圓周的待刪除部分')
+  const cutAngles:number[]=[]
+  for(const cutter of cutters)for(const hit of circlePrimitiveIntersections(circle,cutter)){
+    const angle=normalizeAngle(Math.atan2(hit.y-circle.center.y,hit.x-circle.center.x)/DEG)
+    if(!cutAngles.some(a=>Math.abs(normalizeAngle(a-angle))<1e-5||
+      Math.abs(normalizeAngle(angle-a))<1e-5))cutAngles.push(angle)
+  }
+  if(cutAngles.length<2)throw new Error('修剪整圓至少需要兩個不同的有效交點')
+  cutAngles.sort((a,b)=>a-b)
+  const pointerAngle=normalizeAngle(Math.atan2(click.y-circle.center.y,click.x-circle.center.x)/DEG)
+  let selected=-1
+  for(let i=0;i<cutAngles.length;i++){
+    const lower=cutAngles[i],upper=i===cutAngles.length-1?cutAngles[0]+360:cutAngles[i+1]
+    const shifted=pointerAngle<lower?pointerAngle+360:pointerAngle
+    if(shifted>=lower-1e-7&&shifted<=upper+1e-7){selected=i;break}
+  }
+  if(selected<0)throw new Error('無法判斷要移除的圓弧範圍')
+  const from=cutAngles[selected],to=cutAngles[(selected+1)%cutAngles.length]
+  const remaining=normalizeAngle(from-to)
+  if(remaining<.001||360-remaining<.001)throw new Error('剩餘圓弧角度過小')
+  const startAngle=normalizeAngle(rounded(to))
+  const endAngle=normalizeAngle(rounded(from))
+  if(arcSweep({startAngle,endAngle})<1e-5)
+    throw new Error('無法在 0.001° 角度精度內建立剩餘圓弧')
+  return [{...circle,kind:'arc',startAngle,endAngle}]
 }

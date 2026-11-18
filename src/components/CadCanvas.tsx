@@ -399,7 +399,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       onAuxClick={e => e.preventDefault()}
       onWheel={e => { e.preventDefault(); onCameraChange(zoomAt(camera, e.deltaY < 0 ? 1.15 : 1 / 1.15, localPosition(e), size.width, size.height)) }} />
     <div className="canvas-label"><span className="canvas-label-mark">⌗</span> 模型空間 <span className="canvas-label-sep">/</span> TOP <span className="canvas-label-sep">/</span> 2D 線框</div>
-    <div className="canvas-guide">{pickLabel==='trim'?'TRIM：點擊要刪除的部分；金色虛線為裁切邊界':
+    <div className="canvas-guide">{pickLabel==='trim'?'TRIM：點擊線段／圓弧／整圓上欲刪除的區段；金色虛線為裁切邊界':
       pickLabel==='extend'?'EXTEND：點選靠近欲延伸端點的線段；金色虛線為邊界':
       offsetPreview?'OFFSET：點擊偏移方向；青色虛線為預覽':
       '拖曳框選：左→右完整／右→左交叉 · 滾輪縮放 · 中鍵平移'}</div>
