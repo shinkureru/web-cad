@@ -112,7 +112,7 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.9.0：A / ARC 真實三點圓弧，F / FILLET 原生圓弧，DXF ARC、TRIM 圓弧。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v1.0.0：TRIM 可將 CIRCLE 修剪為真正 ARC；Chromium 瀏覽器操作自動驗收。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -287,15 +287,15 @@ export default function App() {
     setTrimMode({boundaryIds:boundaries.map(e=>e.id)})
     setOffsetMode(null);setExtendMode(null);setCornerMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
     setAnnotation(null);setDraft(null);setTool('select');selectSingle(null)
-    logMessage('TRIM：在畫布上點選要移除的線段部分；裁切邊界保持不變。按 Esc 結束。')
+    logMessage('TRIM：點擊要刪除的直線／ARC／CIRCLE 區段；整圓至少需兩個交點，按 Esc 結束。')
   }
   function finishTrim(targetId:string|null,point:Point) {
     if(!trimMode)return
-    if(!targetId){showNotice('請點擊要修剪的直線、開放聚合線或圓弧。');return}
+    if(!targetId){showNotice('請點擊要修剪的直線、開放聚合線、圓弧或整圓。');return}
     try{
       const next=trimDocument(doc,trimMode.boundaryIds,targetId,point,uid)
       editDoc(()=>next);selectSingle(null)
-      logMessage('TRIM 已修剪目標物件；可繼續點選其他線段，按 Esc 結束。')
+      logMessage('TRIM 已修剪目標物件（整圓將轉成開放 ARC）；可繼續點選，按 Esc 結束。')
     }catch(error){showNotice(error instanceof Error?error.message:'TRIM 無法完成')}
   }
   function startExtend() {
@@ -710,7 +710,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.9.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.0.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -891,7 +891,7 @@ export default function App() {
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.9.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.0.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
@@ -899,7 +899,7 @@ export default function App() {
       ['A / ARC', '三點繪製真實圓弧：起點 → 圓弧經過點 → 終點（世界座標逆時針 CCW）'],
       ['ARC / TRIM', '選切割邊界（直線、圓或圓弧）→ TR → 點圓弧中要刪除的區段'],
       ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
-      ['TR / TRIM', 'Shift+點選一個或多個切割邊界 → TR → 點擊要刪除的直線／開放聚合線部分'],
+      ['TR / TRIM', 'Shift 選切割邊界 → TR → 點擊直線／開放 PL／ARC／CIRCLE 待刪區段；整圓剩餘為原生 ARC'],
       ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
