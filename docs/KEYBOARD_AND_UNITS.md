@@ -38,7 +38,7 @@
 
 ## 3. 指令快捷鍵編輯
 
-設定對話框內提供 22 個常見 CAD 指令主要簡碼的編輯欄，如 LINE、PLINE、CIRCLE、ARC、MOVE、COPY、ROTATE、OFFSET、TRIM、FILLET、CHAMFER、ERASE、DIMLINEAR。
+設定對話框內提供 26 個常見 CAD 指令主要簡碼的編輯欄，如 LINE、PLINE、CIRCLE、ARC、MOVE、COPY、ROTATE、OFFSET、TRIM、FILLET、CHAMFER、ERASE、DIMLINEAR。
 
 例如將 LINE 原本的 L 改成 Q，儲存後就能輸入 Q＋空白鍵啟用 LINE；主要簡碼 L 停用，但完整 LINE 文字仍有效。設定存放在瀏覽器 localStorage 的 web-cad:v1:preferences，與圖面檔案獨立，重新整理後保留。若需還原，按「恢復預設」再儲存。
 
