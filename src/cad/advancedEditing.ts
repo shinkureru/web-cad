@@ -97,7 +97,7 @@ export type CornerMode='fillet'|'chamfer'
 export interface CornerPreview {a:LineEntity;b:LineEntity;connector:CadPrimitive|null;corner:Point}
 /**
  * A circular fillet is tessellated into short POLYLINE chords (<= ~0.1 mm
- * sagitta before rounding, maximum 256 pieces) because native ARC is not yet
+ * sagitta before rounding, maximum 2048 pieces) because native ARC is not yet
  * in the model; exporting DXF keeps this as LWPOLYLINE, not a true ARC.
  */
 export function cornerGeometry(first:LineEntity,second:LineEntity,mode:CornerMode,
@@ -137,7 +137,9 @@ export function cornerGeometry(first:LineEntity,second:LineEntity,mode:CornerMod
       while(sweep< -Math.PI)sweep+=2*Math.PI
       const radius=d1
       const maxStep=2*Math.acos(clamp(1-Math.min(.1,radius/2)/radius,-1,1))
-      const count=Math.min(256,Math.max(8,Math.ceil(Math.abs(sweep)/maxStep)))
+      const required=Math.max(8,Math.ceil(Math.abs(sweep)/maxStep))
+      if(required>2048)throw new Error('圓角過大，無法在 0.1 mm 弦高誤差內安全生成；請縮小半徑')
+      const count=required
       const points=Array.from({length:count+1},(_,i)=>{
         if(i===0)return tangent1
         if(i===count)return tangent2
