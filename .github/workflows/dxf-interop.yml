@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'src/cad/dxf.ts'
+      - 'src/cad/curveDimensions.ts'
+      - 'src/cad/curveDimensions.test.ts'
       - 'src/cad/dxf.test.ts'
       - 'scripts/validate_dxf.py'
       - '.github/workflows/dxf-interop.yml'
