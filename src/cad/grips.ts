@@ -38,6 +38,7 @@ export function entityGrips(entity:CadEntity):Grip[]{
       {id:'startAngle',position:arcPoint(entity,0),label:'弧起點'},
       {id:'endAngle',position:arcPoint(entity,1),label:'弧終點'}
     ]
+    case 'curveDimension':return [{id:'placement',position:entity.placement,label:'標註文字位置'}]
     case 'insert':return [{id:'position',position:entity.position,label:'插入點'}]
     case 'text':return [{id:'position',position:entity.position,label:'文字插入點'}]
     case 'dimension':return [
@@ -97,6 +98,7 @@ export function moveGrip(entity:CadEntity,gripId:string,raw:Point):CadEntity{
       if(arcSweep(modified)<.001)throw new Error('圓弧角度跨度必須大於 0.001°')
       return modified
     }
+    case 'curveDimension':return {...entity,placement:target}
     case 'insert':case 'text':return {...entity,position:target}
     case 'dimension':return {...entity,[gripId]:target}
   }
