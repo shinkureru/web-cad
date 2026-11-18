@@ -594,39 +594,62 @@ export default function App() {
   }
   function handleCommandSubmit() { runCommand(commandText); setCommandText('') }
   useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      const target = ev.target as HTMLElement | null
-      const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
-      if (ev.isComposing) return
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a' && !editing) {
+    const onKey=(ev:KeyboardEvent)=>{
+      const target=ev.target as HTMLElement|null
+      if(settingsOpen||helpOpen||plotOpen||ev.isComposing||ev.key==='Process'||ev.keyCode===229)return
+      const editing=!!target&&(target.isContentEditable||
+        ['INPUT','TEXTAREA','SELECT'].includes(target.tagName))
+      const commandInput=target===inputRef.current
+      const canvasFocused=target?.matches('canvas.cad-canvas')??false
+      const cadFocused=canvasFocused||target===document.body
+      // Explicitly preserve browser Ctrl/Cmd+P/L/T/W/R/S/F and text-input undo.
+      if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&cadFocused&&!ev.repeat){
+        const key=ev.key.toLowerCase()
+        if(key==='a'){
+          ev.preventDefault()
+          const ids=doc.entities.filter(e=>{
+            const l=doc.layers.find(layer=>layer.id===e.layerId)
+            return l?.visible&&!l.locked
+          }).map(e=>e.id)
+          setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
+          logMessage('已選取 '+ids.length+' 個可編輯物件。')
+          return
+        }
+        if(key==='z'){
+          ev.preventDefault();dispatch({type:ev.shiftKey?'redo':'undo'});setDraft(null);return
+        }
+        if(key==='y'){
+          ev.preventDefault();dispatch({type:'redo'});setDraft(null);return
+        }
+      }
+      if(ev.key==='Escape'&&(cadFocused||commandInput)&&!ev.repeat){
         ev.preventDefault()
-        const ids=doc.entities.filter(e=>{
-          const l=doc.layers.find(layer=>layer.id===e.layerId)
-          return l?.visible && !l.locked
-        }).map(e=>e.id)
-        setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
-        logMessage('已選取 '+ids.length+' 個可編輯物件。')
+        setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+        setAnnotation(null);setOffsetMode(null);setTrimMode(null);setExtendMode(null)
+        setCornerMode(null);setTool('select');selectSingle(null)
+        logMessage('已取消操作.')
         return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') {
-        ev.preventDefault(); setPlotOpen(true); return
+      if(canvasFocused&&(ev.key==='F3'||ev.key==='F8')){
+        ev.preventDefault()
+        if(ev.key==='F3')setOsnap(old=>!old)
+        else setOrtho(old=>!old)
+        return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
-        ev.preventDefault(); dispatch({ type: ev.shiftKey ? 'redo' : 'undo' }); setDraft(null); return
+      if(cadFocused&&shouldSubmitCommandKey(ev.key,preferences.confirmKey)&&
+        !ev.ctrlKey&&!ev.metaKey&&!ev.altKey&&!ev.shiftKey&&!ev.repeat){
+        ev.preventDefault();handleCommandSubmit();return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') {
-        ev.preventDefault(); dispatch({ type: 'redo' }); setDraft(null); return
-      }
-      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
-      if (ev.key === 'F3') { ev.preventDefault(); setOsnap(old => !old); return }
-      if (ev.key === 'F8') { ev.preventDefault(); setOrtho(old => !old); return }
-      if (!editing && ev.key === 'Delete') { ev.preventDefault(); deleteSelected(); return }
-      if (!editing && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-        ev.preventDefault(); setCommandText(t => t + ev.key); inputRef.current?.focus()
+      if(cadFocused&&canRedirectPlainKey({
+        key:ev.key,ctrlKey:ev.ctrlKey,metaKey:ev.metaKey,altKey:ev.altKey,
+        isComposing:ev.isComposing,editing,dialogOpen:false,repeat:ev.repeat
+      })){
+        ev.preventDefault()
+        setCommandText(t=>t+ev.key);inputRef.current?.focus()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown',onKey)
+    return ()=>window.removeEventListener('keydown',onKey)
   })
 
   function exportDrawingDxf() {
