@@ -1,6 +1,34 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v0.7.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v0.8.0 ｜ Repo：`shinkureru/web-cad`
+
+## v0.8.0 — EXTEND、FILLET、CHAMFER 與拖曳框選
+
+- 從已 Merge 的 PR #7／最新 main 建立分支 `feat/v0.8.0-extend-fillet-chamfer-selection` → PR #8。使用者自行驗收／Merge；禁止直接修改 main。
+- `src/cad/advancedEditing.ts`：純幾何有限邊界 EX／EXTEND（LINE 端點延伸至最近的 LINE、RECT、PL、CIRCLE、單層 INSERT 交點）、F／FILLET（兩 LINE 真實幾何切點、近似圓弧用細分 POLYLINE）、CHA／CHAMFER（兩 LINE 指定兩個 mm 倒角距離、建立連線）。
+- FILLET 是**弦高誤差目標 0.1 mm 的細分 POLYLINE**；半徑過大或精度不足時拒絕，不冒充原生 ARC、DXF ARC。原始 LINE 端點仍保留可編輯，JSON schema version 1 不變。
+- `windowSelection()`：左至右完全包含、右至左交叉；涵蓋基本圖元、文字／尺寸近似外接、圖塊原子選取；隱藏或鎖定物件不可選。
+- `src/components/CadCanvas.tsx`：真正 pointer drag 捕捉與 6px 啟動門檻、藍色實框與綠色交叉虛框、角隅編輯預覽、EX 金色邊界提示、批次 MOVE／COPY／ROTATE 預覽。
+- `src/App.tsx`：EX/F/CHA 指令與左工具列；Shift 累積多選、Ctrl+A（macOS ⌘A）選可編輯全部、批次 M/CO/RO/Delete 為單一 Undo 步；指令切換重設互斥模式。
+- `src/cad/advancedEditing.test.ts`：新增有限交點、角隅切點和半徑、四象限、圖塊與圓邊界、窗口／交叉矩形、多圖層保護、JSON、Undo/Redo 的回歸測試。
+- 使用／人工驗收詳見 `docs/ADVANCED_EDITING.md`。
+
+### PR #8 完成驗收
+
+1. GitHub Actions `npm test`、TypeScript `tsc -b`、`vite build` 全通過才可 Merge。
+2. 延伸：LINE `0,0 → 1000,0`，選 x=2000 的垂直 LINE 為邊界 → EX → 點水平線靠近 `1000,0` 端，終點必須到 `2000,0`。
+3. 圓角：選兩條 1000 mm 直角 LINE → F → 半徑 100，切點 `100,0` 與 `0,100`，新增近似圓弧聚合線；R0 生成尖角。
+4. 倒角：同一組直角 LINE → CHA → `100,150`，新增連接線 `100,0 → 0,150`。
+5. 框選：左→右只選全包含、右→左選交叉；Shift 累積，Ctrl+A；框選 3 件物件後 MOVE／COPY／ROTATE／Delete 應作用於全部；鎖定／隱藏圖層不可編輯。
+6. 使用新版 JSON／DXF 保存，FILLET 曲線應是 POLYLINE 而非 ARC；需與真實 AutoCAD 人工比對。瀏覽器 E2E／觸控仍未通過自動化驗收。
+
+### 已知限制與建議後續
+
+- EXTEND 目標限 LINE；FILLET／CHAMFER 需兩條 LINE，尚無原生 ARC、曲線真實參數、封閉聚合線圓角／倒角或全系列 AutoCAD 編修。
+- 本批聚合線 FILLET 線段為近似；列印／DXF 可能可看到分段，**不得誤認為真正解析式圓弧**。
+- 仍缺 DWG 原生格式、完整 CAD 引擎精確度及施工圖工具認證。建議 v0.9.0 優先原生 ARC 與完整 DXF ARC 互通、圓弧 TRIM／FILLET、或根據實際操作回饋優先修正互動 UX。
+
+---
 
 ## v0.7.0 — OFFSET／TRIM 常用精準編修
 
