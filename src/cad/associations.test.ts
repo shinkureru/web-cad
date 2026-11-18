@@ -186,6 +186,27 @@ describe('v1.4.0 associative curve dimensions',()=>{
   expect(exported.text).toContain('R600')
   expect(importDxf(exported.text).document.entities.some(e=>e.kind==='curveDimension')).toBe(false)
  })
+ it('recovers a stale linked model when re-opening externally modified native JSON',()=>{
+  const original=linkedDoc()
+  const edited=JSON.parse(JSON.stringify(original)) as CadDocument
+  edited.entities[0]={...edited.entities[0],radius:760} as CadEntity
+  // Only the SOURCE was edited outside CAD; the persisted label was not.
+  const imported=parseDocument(edited)
+  expect(findLabel(imported)).toMatchObject({radius:760,sourceId:'source-circle'})
+  expect(findLabel(imported).placement).toEqual(p(750,200))
+  expect(findLabel(original)).toMatchObject({radius:500})
+ })
+ it('PLOT and DXF warn about frozen orphan measurements instead of silently displaying them',()=>{
+  const before=linkedDoc()
+  const deleted=step(before,d=>({...d,entities:d.entities.filter(e=>e.id!==circle.id)}))
+  const output=buildPlot(deleted,{paper:'A3',orientation:'landscape',
+    scale:50,color:'monochrome',margin:10})
+  expect(output.warnings.some(w=>w.includes('來源已遺失'))).toBe(true)
+  const transfer=exportDxf(deleted)
+  expect(transfer.warnings.some(w=>w.includes('凍結'))).toBe(true)
+  const linked=exportDxf(before)
+  expect(linked.warnings.some(w=>w.includes('來源追蹤'))).toBe(true)
+ })
  it('noop document edits preserve original snapshots and compatibility',()=>{
   const original=linkedDoc()
   const state={past:[],present:original,future:[]}
