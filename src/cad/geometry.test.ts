@@ -36,7 +36,7 @@ describe('command interpreter', () => {
     expect(findCommand('pl')).toBe('polyline')
     expect(findCommand('LINE')).toBe('line')
     expect(findCommand('rec')).toBe('rectangle')
-    expect(findCommand('tr')).toBe(null)
+    expect(findCommand('tr')).toBe('trim')
   })
   it('reads absolute, relative and polar coordinates', () => {
     expect(parsePointInput('3000,1200', null, { x: 0, y: 0 })).toEqual({ x: 3000, y: 1200 })
