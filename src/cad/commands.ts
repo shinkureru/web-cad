@@ -12,6 +12,7 @@ const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'sa
   DLI: 'linearDimension', DIMLINEAR: 'linearDimension',
   DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
   D: 'dimstyle', DIMSTYLE: 'dimstyle',
+  PLOT: 'plot', PRINT: 'plot',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }
 export type CadCommand = (typeof aliases)[string]
