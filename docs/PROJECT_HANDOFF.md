@@ -1,6 +1,44 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v1.0.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v1.1.0 ｜ Repo：`shinkureru/web-cad`
+
+## v1.1.0 — 可編輯快捷指令、Space 確認與 mm／cm 精準輸入
+
+### 來源與協作規範
+
+- 使用者於 2026-11-18 回報：習慣用 Space 確認而非 Enter、網頁版 CAD 會和瀏覽器及 OS 快捷鍵衝突、輸入公分數沒有反應。要求下一批 v1.1.0 直接實作。
+- PR #10 已合併；由最新 main SHA 903baf5396c69d5d41ba6a8895ea69a16bced71f 開獨立 feat/v1.1.0-keyboard-cm-input-settings，對應 PR #11。使用者完成測試後自行 Merge；**未直接修改 main**。
+- package.json 更新至 1.1.0；原生 JSON version 1、DXF mm 和圖元原座標／幾何完全不變。本批的偏好只存在瀏覽器 localStorage（web-cad:v1:preferences），不寫入模型檔。
+
+### 實作內容
+
+- src/cad/commands.ts：新增 InputUnit、parseLengthInput、unitToMm。原本只接受純數字 mm；現在可輸入 mm/cm/m 或 毫米/公分/公尺 的明確長度。12.34cm=123.4mm、1.23456cm=12.346mm（0.001mm 精度）。支援混合座標 300cm,150mm、相對 @30cm,10cm、極座標 @30cm<45 與沿滑鼠方向的單一長度。沒有單位後綴時使用使用者選定的輸入預設 mm 或 cm（預設 mm 避免舊圖和舊指令意外放大）；世界模型永遠 mm。
+- 命令解析接線：LINE、PL、REC、WALL、CIRCLE、ARC 與尺寸標註點位、BLOCK 插入點、MOVE/COPY／絕對或相對座標，都使用新 parsePointInput；OFFSET 距離與 FILLET 半徑、CHAMFER 兩側距離改用 parseLengthInput；旋轉角度仍是度，不改變長度精度。
+- 可見數值：工具列 WALL 牆厚與新增 TEXT 高度能依 mm／cm 設定顯示並以 mm 儲存；狀態列顯示輸入單位、模型 mm，游標座標會依所選單位顯示；其他既有標註樣式／物件屬性目前仍使用 mm（不變更物件模型）。
+- src/cad/preferences.ts：預設 both（Space 與 Enter 都可確認）、mm，22 項常見 CAD 指令主要短碼可重新命名、保留英文全名；自訂別名替換該指令原本主要短碼，並拒絕和其他 CAD 指令／預設 alias、保留鍵、重複代碼衝突。偏好存本機，支援異常設定安全回退；不實作任意 Ctrl／Alt／Meta 系統組合鍵映射。
+- src/components/CadSettingsDialog.tsx、src/styles.css：新增上方「設定」按鈕、可儲存的深色高對比設定面板，確認鍵兩者/空白/Enter、單位 mm/cm、22 項自訂簡碼與衝突警告、恢復預設。手機版設定面板單欄捲動。
+- src/App.tsx：改為對 command input、焦點在 CAD Canvas 和 body 區域處理 Space/Enter 確認；文字及圖塊名稱階段保留 Space 並使用 Enter 完成、IME composing/229 不誤送出；TEXT 不裁除尾端合法空白。
+- 衝突策略：不再攔截 Ctrl／Command+P（瀏覽器原生列印）；PLOT 仍可使用指令或上方比例出圖按鈕。Ctrl／Command+L/T/W/R/S/F 等由瀏覽器處理；CAD Ctrl／Command+A/Z/Y 限 Canvas/body 焦點，輸入框中仍為原生文字操作。F3/F8 僅在 Canvas 有焦點時切換，canvas tabIndex=0 並於點擊時取得焦點。設定對話框與 PLOT/HELP 模態視窗不攔截一般 CAD 鍵；普通按鈕保持原生 Space 操作。
+- src/cad/preferences.test.ts：新增 10 項單元測試；src/cad 舊測試保持 124/124，現在總計 **134/134**（含公分換算精度、極座標、輸入法／網頁按鍵排除與設定驗證）。
+- e2e/cad.spec.ts：原有 4 組 Chromium 端對端回歸，新增 4 組：Space 真的確認 CAD 指令、明確 cm 精確座標；設定自訂 Q→LINE 並設 cm 後重載；衝突警告與繁中 TEXT 空格（含尾端空格）保留；瀏覽器 Ctrl 组合不攔截、普通輸入框正常。共 **8 組真瀏覽器 E2E**。
+- README、docs/KEYBOARD_AND_UNITS.md 與 docs/PLOT_PRINTING.md 已同步修正原來 Ctrl+P=CAD PLOT 的過時說明。
+
+### PR #11 Merge 驗收清單
+
+1. 兩個 GitHub workflow 對應 PR 最新 SHA：Build, test and deploy 跑 npm test 134/134、npm run build TypeScript/Vite；Chromium browser E2E smoke 跑 8/8 Playwright。**確認兩項皆 success 才 Merge**。
+2. 預設 both：在 CAD 指令列輸入 L + 空白、0,0 + 空白、300cm,0 + 空白，應得到 3000 mm 直線。
+3. 切換偏好預設 cm：在沒有後綴時打 300,0，應也是 3000,0 mm；偏好改回 mm 就變成 300,0 mm。切換不能修改已存圖面座標。
+4. OFFSET 12.5cm 應偏移 125 mm；FILLET 10cm 應建立 R100 mm 真圓弧；CHAMFER 10cm,15cm 則兩端偏移分別 100/150 mm。
+5. 自訂 LINE 主要簡碼 L→Q、TR→TT，儲存與重載後 Q/TT 生效；LINE/TRIM 英文全名仍可執行；改成其他指令既有代碼或系統保留鍵應顯示衝突。
+6. 輸入繁體中文 TEXT「客廳 A B」時可用空白、沒有誤送出；文字輸入完用 Enter、再輸入座標用 Space 完成。中文 IME 選字／組字時需人工補測。
+7. 檢查在 Canvas 內 F3/F8、Ctrl/Command+Z/Y/A 確實作用；點一般文字欄使用 Ctrl/Command+Z、A 不會操作 CAD；Ctrl+P 為瀏覽器原生列印，而 CAD PLOT 仍由工具列按鈕／PLOT 命令開啟。
+8. Chrome 通過仍不代表 Safari／Firefox／行動觸控／所有輸入法及真實 AutoCAD／施工圖精度已驗證。
+
+### 待續
+
+v1.2.0 可先依使用者手動測試修正鍵盤操作細節，再考慮弧長／半徑／角度標註、端點夾點、Polyline bulge 與進一步跨瀏覽器鍵盤回歸。Web CAD 仍是可測試的 2D 原型，不能直接當施工定稿。
+
+---
 
 ## v1.0.0 — Chromium 瀏覽器 E2E 與 CIRCLE→ARC 修剪里程碑
 
