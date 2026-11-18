@@ -1,6 +1,32 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v0.6.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v0.7.0 ｜ Repo：`shinkureru/web-cad`
+
+## v0.7.0 — OFFSET／TRIM 常用精準編修
+
+- GitHub 分支 `feat/v0.7.0-offset-trim`、PR #7，從已 Merge 的 v0.6.0 main 開發；**PR 由使用者 Merge，不直接修改 main**。
+- `src/cad/precisionEdit.ts`：OFFSET 直線、圓、矩形與直線段聚合線；以點擊位置決定偏移方向，產生新物件，保留來源與圖層屬性。聚合線採 miter 接合，拒絕零長線段、180° 折返、自交與超長尖角；矩形向內塌縮／反轉時拒絕。
+- TRIM：使用預選單個或多個裁切邊界（LINE/CIRCLE/PL/RECT、單層 BLOCK），點擊欲移除的 LINE／開放 PL 區段，透過有限真實交點拆分剩餘幾何；不修改裁切邊界。
+- 指令 `O/OFFSET`：選物件→輸入距離（mm）→點選偏移側；可重複偏移或修改距離，Esc 結束。指令 `TR/TRIM`：Shift 選邊界→點選要移除的區段，可連續修剪、Esc 結束。
+- `src/components/CadCanvas.tsx`：偏移預覽為青色虛線；TRIM 選取的切割邊界以金色虛線區別，編輯點選使用未經 OSNAP 投影的模型坐標。
+- `src/cad/precisionEdit.test.ts`：水平／斜向偏移、圓與矩形、聚合線轉角、TRIM 中段／端段、圓／圖塊 cutter、鎖定／隱藏、JSON 與 Undo/Redo。原生格式 version 1 不變，舊圖可開。
+- **限制**：封閉聚合線、RECT、CIRCLE 目前不能作為 TRIM 的目標（只能作為切割邊界）；無 ARC／Spline 曲線修剪、TRIM 延伸模式、巢狀圖塊、真實 DWG、精準施工圖驗收。
+- 詳細測試與使用方式：`docs/PRECISION_EDITING.md`。
+
+### Merge 後驗收
+
+1. `npm test`、`npm run build` 全通過，再 Merge。
+2. LINE `0,0 → 3000,0`、`O`、`120` → 點上方，應得 `0,120 → 3000,120`，原 LINE 保留。
+3. 圓半徑 500 → `O` 距離 100 點外／內，分別得到半徑 600／400。
+4. 橫向 LINE `0,0 → 3000,0`，兩條垂直 LINE 在 x=1000、2000 穿越；Shift 預選兩邊界→TR→點中間，保留左右 1000 mm、刪除中央區段。
+5. 測試圖層鎖定與隱藏、零距離、錯誤交點，應提示並保留圖面；Undo/Redo／JSON／DXF 交換測試。
+6. 在手機／桌面瀏覽器實際操作滑鼠選取、Esc、工具列捲動，尤其 TRIM 需點擊要移除的段落而非邊界交點。
+
+### 下一批
+
+`v0.8.0` 可優先規劃 EXTEND、FILLET、CHAMFER、框選與多選編輯；再逐步拓展封閉多邊形、ARC 等曲線拓撲編修。所有新功能需自動測試與外部 CAD 人工驗收。
+
+---
 
 ## v0.6.0 — A4/A3 定比例向量出圖與瀏覽器 PDF 列印
 
