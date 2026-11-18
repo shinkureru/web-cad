@@ -1,6 +1,34 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-17 ｜ 最新開發批次：v0.5.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v0.6.0 ｜ Repo：`shinkureru/web-cad`
+
+## v0.6.0 — A4/A3 定比例向量出圖與瀏覽器 PDF 列印
+
+- 本批分支 `feat/v0.6.0-scale-plotting`、PR #6，從已合併的 v0.5.0 main 接續，不直接更動 main。使用者驗收後再 Merge。
+- `src/cad/plot.ts`：純 TypeScript 定比例 SVG（紙張物理 mm）、一頁式 A3/A4 直／橫圖框、1:20/50/100/200/500 固定比例、模型座標／紙張 mm 轉換、圖層／物件線粗（mm）、顏色／虛線、圖塊展開、文字與尺寸、圖名及圖示比例尺。
+- `src/components/PlotDialog.tsx`：PLOT／Ctrl+P 出圖面板與 SVG 預覽、下載、瀏覽器列印。PDF 須由瀏覽器選「儲存為 PDF」；本批沒有直接下載 PDF 的 JS 引擎。
+- 自動置中可見物件；超出圖紙有效範圍時禁止匯出／列印，不自動改變固定比例或默默截圖裁斷。
+- `src/cad/plot.test.ts`：毫米紙張及比例、不同圖層顏色／線粗、可見性、圖塊、文字、標註、SVG 安全跳脫、超出阻擋。
+- `.github/workflows/plot-interop.yml`、`scripts/validate_plot_pdf.py`：獨立 CairoSVG + pypdf 轉出 PDF，驗證 A3 紙張為 420×297 mm、6000 mm 在 1:50 為 120 mm。此驗證不代表 Chrome、Safari、實體印表機等所有列印系統的比例都已通過。
+- 詳細流程與出圖限制請見 `docs/PLOT_PRINTING.md`。
+
+### Merge 後驗收
+
+1. CI：`npm test`（本批合計 62 項）、`npm run build`，以及獨立 PDF 物理尺寸 workflow 都通過。
+2. 載入示範圖→PLOT，A3 橫向 1:50，確認圖框、房名、DLI/DAL、線粗及比例尺。
+3. SVG 在向量工具核對 6000 mm → 120 mm（1:50）；改 1:100 應為 60 mm。
+4. 用 A4 直向 1:20 測試過大圖面，應提示不可輸出；改為 1:100 重新預覽。
+5. 瀏覽器「列印 → 儲存為 PDF」，關閉頁首／頁尾，100%、無邊界，檢查 A3 實體尺寸並以尺量圖示比例尺。
+6. 切換圖層隱藏、線粗和色彩，確認 SVG／PDF 輸出正確。繁體中文請在不同作業系統驗收字型替代。
+
+### 仍未完成
+
+- 真正完整 Layout／Paper Space、多頁／自訂圖框、WINDOW 選框出圖、CTB/STB、文字字型嵌入與實體列印保證。
+- 完整 DXF/DWG 相容性與 DWG 原生讀寫、尺寸關聯、OFFSET／TRIM、牆體自動接角／開門洞。
+- 上游 Cota manual POC 仍未執行；本 Repo 仍採自主 React/Canvas 2D 核心。
+- 目前列印有字型替換、瀏覽器預設列印縮放、紙張頁邊與印表機硬體可列印邊界等風險，需人工印表驗證。不能視為施工定稿工具。
+
+---
 
 ## v0.5.0 — DXF 2000 匯入／匯出交換子集
 

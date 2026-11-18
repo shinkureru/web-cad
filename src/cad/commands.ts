@@ -1,7 +1,7 @@
 import type { EditTool, Point, Tool } from './types'
 import { roundPoint } from './geometry'
 
-const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
@@ -12,6 +12,7 @@ const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'sa
   DLI: 'linearDimension', DIMLINEAR: 'linearDimension',
   DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
   D: 'dimstyle', DIMSTYLE: 'dimstyle',
+  PLOT: 'plot', PRINT: 'plot',
   SAVE: 'save', Z: 'fit', ZE: 'fit', ZOOM: 'fit',
 }
 export type CadCommand = (typeof aliases)[string]

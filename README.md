@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v0.5.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
+> **v0.6.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
 ## 本機執行
 
@@ -34,8 +34,9 @@ npm run build
 - 選取物件後設定圖層、顏色、線粗、線型，支援 ByLayer 覆寫
 - localStorage 自動儲存、匯入／匯出 `.webcad.json`、可編輯的示範平面圖
 - **ASCII DXF 2000 (AC1015) 匯入／匯出**：基本 2D 圖元、圖層、文字、單層圖塊與基本線性／對齊標註；匯入不支援的物件會提示略過數量，使用者確認後才取代工作區
+- **PLOT／Ctrl+P（macOS ⌘P）定比例出圖**：A3/A4、橫／直向、固定 1:20/50/100/200/500、SVG 向量下載、瀏覽器列印／另存 PDF；使用 mm 頁面單位與實體線粗；超出紙張有效區域時禁止裁斷輸出。
 
-支援 Shift 多選以建立圖塊，但編修工具仍只操作最後選取的物件；**尚未支援** TRIM、OFFSET、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、列印與 PDF 比例出圖。螢幕線粗與線型並非實體出圖規格。
+支援 Shift 多選以建立圖塊，但編修工具仍只操作最後選取的物件；**尚未支援** TRIM、OFFSET、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
 
 ### 操作範例
 
@@ -59,6 +60,14 @@ npm run build
 5. 具體支援矩陣、單位換算與外部 CAD 驗收清單請讀 [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md)。
 6. CI 已包含獨立 `ezdxf` 解析器的雙向 DXF smoke test；這不是商用 AutoCAD 的正式互通性驗證。
 
+### 定比例列印（v0.6.0）
+
+- 右上點「比例出圖」，或輸入 `PLOT`／按 `Ctrl+P`；選 A3/A4、方向、比例（例如 1:50）、黑白／彩色。
+- 產生以 mm 定義的向量 SVG；選「列印／儲存 PDF」將開新視窗，**必須由使用者在瀏覽器列印對話框選「儲存為 PDF」**，並設定 100%／無邊界／關閉頁首與頁尾。
+- 超出畫幅的固定比例不會自動縮放或截斷，而會禁止下載／列印；請改比例或紙張。匯出前建議保留原生 JSON。
+- 自動測試驗證 6000 mm 在 1:50 為紙上 120 mm；外部 CairoSVG + pypdf 驗證 A3 PDF 頁面 420×297 mm，但**仍需人工用瀏覽器列印及印表機量測確認**。
+- 詳細操作與限制：[出圖及比例驗收說明](docs/PLOT_PRINTING.md)。
+
 ### GitHub Pages
 
 1. Repository **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
@@ -70,6 +79,7 @@ npm run build
 - [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — 交接、測試、限制及接續版本
 - [`docs/CAD_ENGINE_EVALUATION.md`](docs/CAD_ENGINE_EVALUATION.md) — Cota 評估與自製核心維護決策
 - [`docs/DXF_INTERCHANGE.md`](docs/DXF_INTERCHANGE.md) — DXF 2000 交換子集、限制與驗收
+- [`docs/PLOT_PRINTING.md`](docs/PLOT_PRINTING.md) — A3/A4、實體 mm 比例、SVG 與瀏覽器 PDF 出圖驗收
 
 ## Cota 獨立可行性測試
 
