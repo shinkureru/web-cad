@@ -19,7 +19,13 @@ const drawing=(entities:TestEntity[])=>({
 })
 async function seed(page:Page,entities:TestEntity[]){
   await page.addInitScript(([key,content]:[string,string])=>{
-    localStorage.setItem(key,content)
+    // Seed only once per tab. Re-injecting on reload masks real persistence
+    // regressions and overwrites the document under test.
+    const marker='webcad:e2e:seeded'
+    if(sessionStorage.getItem(marker)!=='1'){
+      localStorage.setItem(key,content)
+      sessionStorage.setItem(marker,'1')
+    }
   },[STORAGE,JSON.stringify(drawing(entities))])
 }
 async function sendCommand(page:Page,command:string){
