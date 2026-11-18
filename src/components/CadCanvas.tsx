@@ -8,6 +8,7 @@ import { expandEntity, expandedDrawing } from '../cad/blocks'
 import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 import { offsetEntity } from '../cad/precisionEdit'
 import { cornerGeometry, windowSelection } from '../cad/advancedEditing'
+import { arcFromThreePoints } from '../cad/arcs'
 import type { CornerMode } from '../cad/advancedEditing'
 
 interface Props {
@@ -88,6 +89,12 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
     case 'rectangle': {
       const a = point(docEntity.start), b = point(docEntity.end)
       ctx.rect(Math.min(a.x,b.x), Math.min(a.y,b.y), Math.abs(b.x-a.x), Math.abs(b.y-a.y)); break
+    }
+    case 'arc': {
+      const c=point(docEntity.center)
+      ctx.arc(c.x,c.y,docEntity.radius*camera.scale,
+        -docEntity.startAngle*Math.PI/180,-docEntity.endAngle*Math.PI/180,true)
+      break
     }
     case 'circle': {
       const c = point(docEntity.center)
@@ -259,6 +266,19 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       if (draft.tool === 'wall' && distance(points[0], hover) > .001) {
         drawEntity(ctx, { id: 'draft', kind: 'polyline', layerId: doc.activeLayerId,
           points: wallOutline(points[0], hover, wallThickness) }, camera, w, h)
+      } else if (draft.tool === 'arc') {
+        if(points.length===1){
+          drawEntity(ctx,{id:'draft',kind:'line',layerId:doc.activeLayerId,
+            start:points[0],end:hover},camera,w,h)
+        }else if(points.length===2){
+          try{
+            const ghost=arcFromThreePoints(points[0],points[1],hover,'preview',doc.activeLayerId)
+            drawEntity(ctx,ghost,camera,w,h)
+          }catch{
+            drawEntity(ctx,{id:'draft',kind:'polyline',layerId:doc.activeLayerId,
+              points:[...points,hover]},camera,w,h)
+          }
+        }
       } else if (draft.tool === 'circle') {
         drawEntity(ctx, { id: 'draft', kind: 'circle', layerId: doc.activeLayerId, center: points[0], radius: distance(points[0], hover) }, camera, w, h)
       } else if (draft.tool === 'rectangle') {

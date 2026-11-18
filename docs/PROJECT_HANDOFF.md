@@ -1,6 +1,41 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v0.8.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v0.9.0 ｜ Repo：`shinkureru/web-cad`
+
+## v0.9.0 — 原生 ARC、DXF ARC 與三點圓弧修剪
+
+- PR #8 已合併；從最新 main `0df995c3d483d9ee23ab807e9ba6c2a6bba0c2f3` 建立 `feat/v0.9.0-native-arc-dxf-trim`，對應 PR #9。**需使用者自行 Merge，禁止直接改 main。**
+- `src/cad/types.ts` 新增原生 `ArcEntity`（`kind:'arc'`、世界座標 mm 圓心、半徑、起始角／結束角）。角度採 CCW、0–360°，支援跨 0°（350°→20°＝30°），不允許零角跨度／零半徑。原生 JSON `version:1` **保持不變**；舊版本程式不一定能讀含 ARC 的新檔。
+- `src/cad/arcs.ts`：三點解析式定弧、端點／中點／圓心、真實弧線外接極值、弧線距離命中、線段／圓／ARC 間有限交點、以被點擊弧段切割保留一到兩段原生 ARC。
+- `src/App.tsx`、`src/components/CadCanvas.tsx`：`A / ARC` 三點（起點→弧經過點→終點）建立真實弧、Canvas 圓弧預覽與渲染、右側半徑和起訖角度編輯。ARC 可 MOVE/COPY/ROTATE、全圖／框選、OSNAP、圖層及圖塊。
+- `src/cad/advancedEditing.ts`：`F / FILLET` 由高密度 POLYLINE 改為**真正 ARC**；保留兩條 LINE 的切點及 R 半徑，DXF 產生 ARC。支援 ARC 作為 EX 的有限邊界與 window/crossing 選取。
+- `src/cad/precisionEdit.ts`：ARC 徑向偏移；TRIM 可修剪 LINE／開放 PL／原生 ARC；ARC 亦能作為裁切邊界；仍不支援完整 CIRCLE 直接修剪成 ARC。
+- `src/cad/dxf.ts`：ASCII DXF 2000 AC1015 的 `ARC` 雙向讀寫（`AcDbCircle`+`AcDbArc`，群組 10/20/40/50/51）、英制／公制轉 mm、BLOCK／INSERT 內 ARC。畫布保留世界座標逆時針角度；異常法線／非 2D 繼續拒絕。
+- `src/cad/plot.ts`：SVG `<path d="... A ...">` 精確向量圓弧、正確大小弧標記、只使用實際弧度的邊界計算，兼容既有 PLOT 比例輸出。
+- `src/cad/arcs.test.ts`：18 項原生 ARC 單元測試；先前 v0.8.0 FILLET 期待值改為原生 ARC，DXF 舊「不支援 ARC」測試已改成正常匯入。
+- `src/cad/dxf.test.ts`、`scripts/validate_dxf.py`：獨立 Python `ezdxf` 真正 ARC 的雙向結構稽核（包含 350°→45°／35° 跨 0° 角度），不是只有內部匯出與匯入互測。
+- `docs/ARC_NATIVE.md` 為最新操作、格式、限制及人工驗收；README、DXF／編修文件同步更正舊版已過時的 ARC 限制。版本號 `package.json=0.9.0`。
+
+### 本批 Merge 前驗收
+
+1. ✅ GitHub Actions `npm test` **113/113**、`npm run build`（TypeScript/Vite）成功。
+2. ✅ 獨立 `ezdxf` 解析 WEB CAD 輸出的 ARC，`ezdxf` 自建 ARC 再由 WEB CAD 解析；PLOT PDF 物理尺寸的獨立回歸亦成功。
+3. 尚需使用者於實際瀏覽器驗收：A→三點畫 R100 上半圓及下半圓；FILLET R100 生成單個真實 ARC；點右側角度欄測 350°→20°。
+4. TRIM 用 X=±50 的兩條線裁剪 R100 上半圓頂部，確認保留 0°→60° 與 120°→180° ARC，Ctrl+Z 可還原。
+5. 匯出 DXF → 真正 AutoCAD／QCAD／LibreCAD 開啟，以 ARC 實體選取、修改半徑、另存 DXF → 回 WEB CAD 再匯入；需核對 0° 跨越、中文與圖塊旋轉。
+6. PLOT 1:50 的 ARC SVG 檢查使用 <path> 真向量圓弧，且紙張比例與實體半徑正確。不能只依賴單元測試認定施工圖精準。
+
+### 尚未完成
+
+- CIRCLE 修剪為 ARC、LWPOLYLINE bulge 弧段／橢圓／Spline、ARC 長度與角度標註、動態端點夾點編輯、全 AutoCAD ARC 互動建構選項、完整 DWG／非 XY 平面。
+- v0.8.0 已存的 FILLET 折線近似**不自動轉成 ARC**；新作 FILLET 才是原生 ARC。
+- 未實際完成 AutoCAD GUI／Safari 等桌面與手機瀏覽器 E2E／實體印表機驗收。此專案仍是可測試的 2D 原型，不可直接作為施工定稿。
+
+### 後續建議
+
+`v1.0.0` 應先做瀏覽器互動 E2E 與回歸修正，再規劃 CIRCLE → ARC 修剪、LWPOLYLINE bulge 曲線和弧長／角度尺寸標註，另處理 DWG／Layout 工程級互通性。
+
+---
 
 ## v0.8.0 — EXTEND、FILLET、CHAMFER 與拖曳框選
 

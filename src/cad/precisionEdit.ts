@@ -1,5 +1,6 @@
 import { distance, entitySegments, roundPoint, segmentCircleIntersections, segmentIntersection } from './geometry'
 import { expandEntity } from './blocks'
+import { arcSegmentIntersections, trimArc } from './arcs'
 import type { CadDocument, CadEntity, CadPrimitive, LineEntity, Point, PolylineEntity } from './types'
 
 /**
@@ -93,7 +94,7 @@ export function offsetEntity(entity:CadEntity,offset:number,side:Point):CadPrimi
   if(!Number.isFinite(offset)||offset<=0||offset>1000000)throw new Error('偏移距離需大於 0 且不超過 1,000,000 mm。')
   if(!Number.isFinite(side.x)||!Number.isFinite(side.y))throw new Error('請指定有效的偏移方向。')
   if(entity.kind==='line')return candidateLine(entity,offset,side)
-  if(entity.kind==='circle'){
+  if(entity.kind==='circle'||entity.kind==='arc'){
     const signed=distance(side,entity.center)>=entity.radius?offset:-offset
     const radius=entity.radius+signed
     if(radius<EPS)throw new Error('偏移後圓半徑必須大於零。')
@@ -142,6 +143,8 @@ function cutValues(target:{a:Point;b:Point},cutters:CadPrimitive[]):number[]{
   for(const cutter of cutters){
     if(cutter.kind==='circle'){
       for(const hit of segmentCircleIntersections(target,cutter.center,cutter.radius))addPoint(hit)
+    }else if(cutter.kind==='arc'){
+      for(const hit of arcSegmentIntersections(cutter,target.a,target.b))addPoint(hit)
     }else{
       for(const seg of entitySegments(cutter)){
         const hit=segmentIntersection(target,seg)
@@ -210,8 +213,8 @@ export function trimDocument(doc:CadDocument,boundaryIds:string[],targetId:strin
   const target=doc.entities.find(e=>e.id===targetId)
   if(!target)throw new Error('找不到要修剪的目標。')
   layerEditable(doc,target)
-  if(target.kind!=='line'&&target.kind!=='polyline')
-    throw new Error('TRIM 目前只能修剪直線或開放聚合線。')
+  if(target.kind!=='line'&&target.kind!=='polyline'&&target.kind!=='arc')
+    throw new Error('TRIM 目前只能修剪直線、開放聚合線或 ARC 圓弧。')
   const cutterEntities=boundaryIds.map(id=>doc.entities.find(e=>e.id===id))
   if(cutterEntities.some(e=>!e))throw new Error('裁切邊界已不存在。')
   const cutters:CadPrimitive[]=[]
@@ -219,9 +222,9 @@ export function trimDocument(doc:CadDocument,boundaryIds:string[],targetId:strin
     const layer=doc.layers.find(l=>l.id===e!.layerId)
     if(!layer?.visible)throw new Error('裁切邊界所在圖層已隱藏。')
     cutters.push(...expandEntity(e!,doc).filter((item):item is CadPrimitive =>
-      ['line','polyline','rectangle','circle'].includes(item.kind)))
+      ['line','polyline','rectangle','circle','arc'].includes(item.kind)))
   }
   if(!cutters.length)throw new Error('裁切邊界必須含直線、圓、矩形或聚合線。')
-  const remains=trimParts(target,cutters,click,newId)
+  const remains=target.kind==='arc'?trimArc(target,cutters,click,newId):trimParts(target,cutters,click,newId)
   return {...doc,entities:doc.entities.flatMap(e=>e.id===target.id?remains:[e])}
 }

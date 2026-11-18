@@ -64,17 +64,17 @@ describe('FILLET and CHAMFER',()=>{
     expect(n.entities[2]).toMatchObject({id:'join',kind:'line',start:p(100,0),end:p(0,200)})
     expect(d.entities[0]).toEqual(a)
   })
-  it('FILLET creates an arc-like polyline with the correct radius and tangent points',()=>{
+  it('FILLET creates native analytic ARC with exact radius and tangent points',()=>{
     const n=joinLines(doc([a,b]),[a.id,b.id],'fillet',100,100,'arc')
     expect(n.entities).toHaveLength(3)
     expect(n.entities[0]).toMatchObject({end:p(100,0)})
     expect(n.entities[1]).toMatchObject({start:p(0,100)})
     const arc=n.entities[2]
-    if(arc.kind!=='polyline')throw new Error('Expected a tessellated polyline')
-    expect(arc.points[0]).toEqual(p(100,0))
-    expect(arc.points.at(-1)).toEqual(p(0,100))
-    expect(arc.points.length).toBeGreaterThan(10)
-    for(const point of arc.points)expect(Math.abs(Math.hypot(point.x-100,point.y-100)-100)).toBeLessThan(.003)
+    if(arc.kind!=='arc')throw new Error('Expected native ARC')
+    expect(arc.center).toEqual(p(100,100))
+    expect(arc.radius).toBe(100)
+    expect(arc.startAngle).toBeCloseTo(180,6)
+    expect(arc.endAngle).toBeCloseTo(270,6)
   })
   it('supports zero-radius FILLET and asymmetric chamfers without a zero-length bridge',()=>{
     const fillet=cornerGeometry(a,b,'fillet',0)
@@ -91,7 +91,7 @@ describe('FILLET and CHAMFER',()=>{
     expect(q.a.start).toEqual(p(100,0))
     expect(q.b.start).toEqual(p(0,100))
     const neg=cornerGeometry(l('nx',p(-2000,0),p(0,0)),l('ny',p(0,-2000),p(0,0)),'fillet',200)
-    expect(neg.connector?.kind).toBe('polyline')
+    expect(neg.connector?.kind).toBe('arc')
   })
   it('refuses oversized radius, internally-crossing/parallel lines and invalid ids',()=>{
     expect(()=>cornerGeometry(a,b,'fillet',2000)).toThrow('不足')
@@ -105,7 +105,7 @@ describe('FILLET and CHAMFER',()=>{
     d.layers.find(x=>x.id==='wall')!.locked=true
     expect(()=>joinLines(d,['horizontal','vertical'],'chamfer',100,100,'new')).toThrow('鎖定')
   })
-  it('roundtrips through native JSON, DXF-compatible polylines, Undo/Redo',()=>{
+  it('roundtrips through native JSON preserving ARC, Undo/Redo',()=>{
     const initial=doc([a,b])
     const final=joinLines(initial,[a.id,b.id],'fillet',100,100,'arc')
     expect(parseDocument(JSON.parse(JSON.stringify(final)))).toEqual(final)

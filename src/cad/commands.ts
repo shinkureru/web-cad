@@ -4,7 +4,7 @@ import { roundPoint } from './geometry'
 const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim' | 'extend' | 'fillet' | 'chamfer'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
-  C: 'circle', CIRCLE: 'circle', SELECT: 'select', ESC: 'cancel',
+  C: 'circle', CIRCLE: 'circle', A: 'arc', ARC: 'arc', SELECT: 'select', ESC: 'cancel',
   U: 'undo', UNDO: 'undo', REDO: 'redo', E: 'delete', ERASE: 'delete', DEL: 'delete',
   M: 'move', MOVE: 'move', CO: 'copy', COPY: 'copy', CP: 'copy', RO: 'rotate', ROTATE: 'rotate',
   B: 'block', BLOCK: 'block', I: 'insert', INSERT: 'insert', X: 'explode', EXPLODE: 'explode',

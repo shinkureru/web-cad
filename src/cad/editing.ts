@@ -1,4 +1,5 @@
 import { roundPoint } from './geometry'
+import { normalizeAngle } from './arcs'
 import type { CadEntity, Point } from './types'
 
 export function translateEntity(entity: CadEntity, offset: Point): CadEntity {
@@ -6,7 +7,7 @@ export function translateEntity(entity: CadEntity, offset: Point): CadEntity {
   switch (entity.kind) {
     case 'line': case 'rectangle': return { ...entity, start: move(entity.start), end: move(entity.end) }
     case 'polyline': return { ...entity, points: entity.points.map(move) }
-    case 'circle': return { ...entity, center: move(entity.center) }
+    case 'circle': case 'arc': return { ...entity, center: move(entity.center) }
     case 'insert': return { ...entity, position: move(entity.position) }
     case 'text': return { ...entity, position: move(entity.position) }
     case 'dimension': return { ...entity, start: move(entity.start), end: move(entity.end), placement: move(entity.placement) }
@@ -28,6 +29,9 @@ export function rotateEntity(entity: CadEntity, pivot: Point, degrees: number): 
     }
     case 'polyline': return { ...entity, points: entity.points.map(spin) }
     case 'circle': return { ...entity, center: spin(entity.center) }
+    case 'arc': return { ...entity, center: spin(entity.center),
+      startAngle: normalizeAngle(entity.startAngle + degrees),
+      endAngle: normalizeAngle(entity.endAngle + degrees) }
     case 'insert': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
     case 'text': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
     case 'dimension': {

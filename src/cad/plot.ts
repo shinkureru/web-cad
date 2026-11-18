@@ -1,5 +1,6 @@
 import { expandedDrawing } from './blocks'
 import { dimensionGeometry, entityExtentPoints, getDimensionStyle } from './annotations'
+import { arcExtents, arcPoint, arcSweep } from './arcs'
 import type { CadDisplayEntity, CadDocument, CadLayer, DimensionEntity, Point } from './types'
 
 export type PaperSize = 'A4' | 'A3'
@@ -55,6 +56,7 @@ function entityBounds(entity:CadDisplayEntity,doc:CadDocument):Point[]{
     case 'line':return [entity.start,entity.end]
     case 'rectangle':return [entity.start,entity.end]
     case 'polyline':return entity.points
+    case 'arc':return arcExtents(entity)
     case 'circle':return [
       point(entity.center.x-entity.radius,entity.center.y-entity.radius),
       point(entity.center.x+entity.radius,entity.center.y+entity.radius)]
@@ -148,6 +150,11 @@ export function buildPlot(doc:CadDocument,options:PlotOptions):PlotResult{
         point(entity.start.x,entity.end.y),entity.start],true,attrs)
     }
     else if(entity.kind==='polyline')trace(entity.points,false,attrs)
+    else if(entity.kind==='arc'){
+      const a=arcPoint(entity,0),b=arcPoint(entity,1)
+      const large=arcSweep(entity)>180?1:0
+      lines.push(tag('path',{d:'M '+tx(a.x)+' '+ty(a.y)+' A '+n(entity.radius/opts.scale)+' '+n(entity.radius/opts.scale)+' 0 '+large+' 0 '+tx(b.x)+' '+ty(b.y),fill:'none',...attrs}))
+    }
     else if(entity.kind==='circle'){
       lines.push(tag('circle',{cx:tx(entity.center.x),cy:ty(entity.center.y),
         r:n(entity.radius/opts.scale),fill:'none',...attrs}))

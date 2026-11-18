@@ -7,6 +7,7 @@
 import { distance, entitySegments, roundPoint, hitTest } from './geometry'
 import { expandEntity } from './blocks'
 import { entityExtentPoints, getDimensionStyle } from './annotations'
+import { arcExtents, arcPrimitiveIntersections, normalizeAngle, pointOnArc } from './arcs'
 import type { CadDocument, CadEntity, CadDisplayEntity, CadPrimitive, LineEntity, Point } from './types'
 
 const EPS = 1e-8
@@ -64,6 +65,8 @@ export function extendLine(doc:CadDocument,boundaryIds:string[],targetId:string,
     if(!layer?.visible)throw new Error('延伸邊界所在圖層不可見')
     for(const primitive of expandEntity(source,doc)){
       if(primitive.kind==='circle')hits.push(...rayCircle(origin,direction,primitive.center,primitive.radius))
+      else if(primitive.kind==='arc') hits.push(...rayCircle(origin,direction,primitive.center,primitive.radius)
+        .filter(hit=>pointOnArc(primitive,hit.point,.005)))
       else for(const segment of entitySegments(primitive)){
         const hit=raySegment(origin,direction,segment.a,segment.b)
         if(hit)hits.push(hit)
@@ -95,11 +98,7 @@ const replaceNear=(line:LineEntity,near:'start'|'end',newPoint:Point):LineEntity
   near==='start'?{...line,start:roundPoint(newPoint)}:{...line,end:roundPoint(newPoint)}
 export type CornerMode='fillet'|'chamfer'
 export interface CornerPreview {a:LineEntity;b:LineEntity;connector:CadPrimitive|null;corner:Point}
-/**
- * A circular fillet is tessellated into short POLYLINE chords (<= ~0.1 mm
- * sagitta before rounding, maximum 2048 pieces) because native ARC is not yet
- * in the model; exporting DXF keeps this as LWPOLYLINE, not a true ARC.
- */
+/** Native analytic ARC, preserves exact radius/angle in JSON and DXF. */
 export function cornerGeometry(first:LineEntity,second:LineEntity,mode:CornerMode,
   d1:number,d2=d1,connectorId='corner'):CornerPreview{
   if(first.id===second.id)throw new Error('請選兩條不同的直線')
@@ -130,26 +129,16 @@ export function cornerGeometry(first:LineEntity,second:LineEntity,mode:CornerMod
     }else{
       const bisector=norm(add(aa.ray,bb.ray))
       const center=add(intersection,mul(bisector,d1/Math.sin(angle/2)))
-      const start=Math.atan2(tangent1.y-center.y,tangent1.x-center.x)
-      const end=Math.atan2(tangent2.y-center.y,tangent2.x-center.x)
-      let sweep=end-start
-      while(sweep>Math.PI)sweep-=2*Math.PI
-      while(sweep< -Math.PI)sweep+=2*Math.PI
-      const radius=d1
-      const maxStep=2*Math.acos(clamp(1-Math.min(.1,radius/2)/radius,-1,1))
-      const required=Math.max(8,Math.ceil(Math.abs(sweep)/maxStep))
-      if(required>2048)throw new Error('圓角過大，無法在 0.1 mm 弦高誤差內安全生成；請縮小半徑')
-      const count=required
-      const points=Array.from({length:count+1},(_,i)=>{
-        if(i===0)return tangent1
-        if(i===count)return tangent2
-        const theta=start+sweep*i/count
-        return roundPoint({x:center.x+radius*Math.cos(theta),y:center.y+radius*Math.sin(theta)})
-      })
-      if(points.some((pt,i)=>i>0&&distance(pt,points[i-1])<.0005))
-        throw new Error('半徑太小，0.001 mm 幾何精度無法生成圓弧')
-      connector={id:connectorId,kind:'polyline',layerId:first.layerId,
-        color:first.color,lineweight:first.lineweight,linetype:first.linetype,points}
+      const angleA=normalizeAngle(Math.atan2(tangent1.y-center.y,tangent1.x-center.x)*180/Math.PI)
+      const angleB=normalizeAngle(Math.atan2(tangent2.y-center.y,tangent2.x-center.x)*180/Math.PI)
+      const sweepAB=normalizeAngle(angleB-angleA)
+      // Always use the minor CCW arc, reversing input endpoints if needed.
+      connector={id:connectorId,kind:'arc',layerId:first.layerId,
+        color:first.color,lineweight:first.lineweight,linetype:first.linetype,
+        center:roundPoint(center),radius:d1,
+        startAngle:Number((sweepAB<=180?angleA:angleB).toFixed(6)),
+        endAngle:Number((sweepAB<=180?angleB:angleA).toFixed(6))}
+
     }
   }
   return {a,b,connector,corner:roundPoint(intersection)}
@@ -199,6 +188,14 @@ function hitsCircle(center:Point,radius:number,box:WindowRect,mode:SelectionMode
 }
 function selectedDisplay(entity:CadDisplayEntity,doc:CadDocument,box:WindowRect,mode:SelectionMode):boolean{
   if(entity.kind==='circle')return hitsCircle(entity.center,entity.radius,box,mode)
+  if(entity.kind==='arc'){
+    const points=arcExtents(entity)
+    if(mode==='window')return points.every(p=>inside(p,box))
+    if(points.some(p=>inside(p,box)))return true
+    return rectEdges(box).some(edge=>arcPrimitiveIntersections(entity,{
+      id:'selection-edge',layerId:entity.layerId,kind:'line',start:edge.a,end:edge.b
+    }).length>0)
+  }
   let points:Point[]=[]
   if(entity.kind==='line')points=[entity.start,entity.end]
   else if(entity.kind==='polyline')points=entity.points

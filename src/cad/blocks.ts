@@ -27,7 +27,7 @@ export function createBlockFromSelection(doc: CadDocument, ids: string[], name: 
   blockId: string, insertId: string): CadDocument {
   const idSet = new Set(ids)
   const selected = doc.entities.filter(e => idSet.has(e.id))
-  if (!selected.length || selected.length !== idSet.size || selected.some(e => !['line','polyline','rectangle','circle'].includes(e.kind))) throw new Error('請選取至少一個基本圖元（不支援巢狀圖塊）')
+  if (!selected.length || selected.length !== idSet.size || selected.some(e => !['line','polyline','rectangle','circle','arc'].includes(e.kind))) throw new Error('請選取至少一個基本圖元（不支援巢狀圖塊）')
   if (!name.trim() || (doc.blocks ?? []).some(b => b.name.toLowerCase() === name.trim().toLowerCase())) throw new Error('圖塊名稱不可空白或重複')
   for (const entity of selected) {
     const layer = doc.layers.find(l => l.id === entity.layerId)
