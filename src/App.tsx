@@ -718,12 +718,12 @@ export default function App() {
       :'倒角距離 mm（預設 '+chamferDistances.join(',')+'）'
     : extendMode?'點選直線欲延伸的端點，Esc 結束'
     : offsetMode
-    ? offsetMode.distance===null?'輸入偏移距離（mm）':'點選偏移側或輸入 X,Y；Esc 結束'
-    : trimMode?'點選要修剪的線段；Esc 結束'
+    ? offsetMode.distance===null?'輸入偏移距離（'+preferences.inputUnit+'；可輸入 30cm）':'點選偏移側或輸入 X,Y；Esc 結束'
+    : trimMode?'點選線段、圓弧或整圓；Esc 結束'
     : annotation
     ? annotation.kind==='text' ? (annotation.text?'指定文字插入點（X,Y）':'輸入要插入的繁體中文文字')
     : ['指定第一個標註點','指定第二個標註點','指定標註線位置'][annotation.points.length]
-    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按 Enter' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，按 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C）'
+    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按確認鍵' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，空白鍵或 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C），空白鍵確認'
 
   return <div className="app">
     <header className="app-header">
@@ -731,6 +731,7 @@ export default function App() {
       <div className="header-divider"/>
       <div className="document-name"><span className="doc-prefix">目前圖面 / </span><input aria-label="圖面名稱" value={doc.name} onChange={e => editDoc(d => ({...d, name: e.target.value}))}/><span className="unsaved-tag">本機自動儲存</span></div>
       <div className="header-actions">
+        <button title="鍵盤與單位設定" aria-label="鍵盤與單位設定" onClick={() => setSettingsOpen(true)}><Settings2 size={16}/><span>設定</span></button>
         <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
         <button title="開啟 JSON / DXF 檔案" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
         <button title="PLOT / Ctrl+P — 按毫米定比例出圖" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
@@ -786,7 +787,15 @@ export default function App() {
         </div>
         <section className="command-area" aria-label="CAD 指令列">
           <div className="console-history">{log.slice(-2).map((message, i) => <div key={`${i}-${message}`}>{message}</div>)}</div>
-          <div className="console-entry"><span className="prompt-icon"><Command size={16}/></span><span className="prompt-label">命令:</span><input ref={inputRef} aria-label="CAD 指令輸入" spellCheck={false} autoComplete="off" placeholder={title} value={commandText} onChange={e => setCommandText(e.target.value)} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); handleCommandSubmit() } }} /><button title="執行指令" onClick={handleCommandSubmit}><CornerDownLeft size={16}/></button></div>
+          <div className="console-entry"><span className="prompt-icon"><Command size={16}/></span><span className="prompt-label">命令:</span><input ref={inputRef} aria-label="CAD 指令輸入" spellCheck={false} autoComplete="off" placeholder={title} value={commandText} onChange={e => setCommandText(e.target.value)} onKeyDown={e=>{
+            if(shouldSubmitInCommandInput(e.key,preferences.confirmKey,{
+              isComposing:e.nativeEvent.isComposing||e.nativeEvent.keyCode===229,
+              ctrlKey:e.ctrlKey,metaKey:e.metaKey,altKey:e.altKey,repeat:e.repeat,
+              freeText:(annotation?.kind==='text'&&!annotation.text)||(!!blockCreate&&!blockCreate.name)
+            })){
+              e.preventDefault();e.stopPropagation();handleCommandSubmit()
+            }
+          }} /><button title="執行指令" onClick={handleCommandSubmit}><CornerDownLeft size={16}/></button></div>
         </section>
       </section>
       {panelOpen && <aside className="property-panel">
@@ -918,8 +927,9 @@ export default function App() {
         <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setAnnotation(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
       </aside>}
     </div>
-    <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
-    {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
+    <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {(cursor.x/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)} <span className="status-sep">·</span> Y {(cursor.y/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">輸入 {preferences.inputUnit==='cm'?'公分 cm':'毫米 mm'} ／ 模型 mm</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
+    {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>} 
+    {settingsOpen && <CadSettingsDialog preferences={preferences} onApply={setPreferences} onClose={() => setSettingsOpen(false)}/>}
     {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.1.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
@@ -929,7 +939,7 @@ export default function App() {
       ['ARC / TRIM', '選切割邊界（直線、圓或圓弧）→ TR → 點圓弧中要刪除的區段'],
       ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
       ['TR / TRIM', 'Shift 選切割邊界 → TR → 點擊直線／開放 PL／ARC／CIRCLE 待刪區段；整圓剩餘為原生 ARC'],
-      ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
+      ['PLOT', '開啟定比例列印；瀏覽器 Ctrl／Command+P 保留原生列印快捷鍵'],
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
