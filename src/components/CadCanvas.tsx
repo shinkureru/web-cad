@@ -7,13 +7,17 @@ import { wallOutline } from '../cad/walls'
 import { expandEntity, expandedDrawing } from '../cad/blocks'
 import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 import { offsetEntity } from '../cad/precisionEdit'
+import { cornerGeometry, windowSelection } from '../cad/advancedEditing'
+import type { CornerMode } from '../cad/advancedEditing'
 
 interface Props {
   doc: CadDocument; camera: Camera; onCameraChange: (v: Camera) => void
   tool: Tool; draft: Draft | null; selectedId: string | null; selectedIds: string[]
   cursor: Point; onCursorChange: (v: Point) => void
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
+  onSelectMany: (ids: string[], extend: boolean) => void
   onPick: (id: string | null, point: Point) => void; pickMode: boolean
+  pickLabel: 'trim'|'extend'|null; cornerMode: CornerMode|null; cornerPreviewValue: string
   trimBoundaryIds: string[]; offsetPreview: {sourceId: string; distance: number} | null
   osnap: boolean; ortho: boolean; grid: boolean
   edit: { kind: EditTool; base: Point | null } | null
@@ -93,13 +97,15 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onPick, pickMode, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
   const [hover, setHover] = useState<Point>(cursor)
   const [snap, setSnap] = useState<Snap | null>(null)
   const drag = useRef<{ pointerId: number; at: Point; cam: Camera } | null>(null)
+  const selectionRef=useRef<{pointerId:number;from:Point;shift:boolean;dragging:boolean}|null>(null)
+  const [selectionBox,setSelectionBox]=useState<{from:Point;to:Point}|null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -175,6 +181,34 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       }
       ctx.setLineDash([])
     }
+    if(selectionBox){
+      const {from,to}=selectionBox
+      const crossing=to.x<from.x
+      ctx.save()
+      ctx.strokeStyle=crossing?'#83dca7':'#78b6ff'
+      ctx.lineWidth=1.2;ctx.setLineDash(crossing?[7,4]:[])
+      ctx.fillStyle=crossing?'#5cce8a26':'#6faeff21'
+      ctx.fillRect(Math.min(from.x,to.x),Math.min(from.y,to.y),
+        Math.abs(to.x-from.x),Math.abs(to.y-from.y))
+      ctx.strokeRect(Math.min(from.x,to.x),Math.min(from.y,to.y),
+        Math.abs(to.x-from.x),Math.abs(to.y-from.y))
+      ctx.restore()
+    }
+    if(cornerMode&&selectedIds.length===2){
+      const [a,b]=selectedIds.map(id=>doc.entities.find(e=>e.id===id))
+      if(a?.kind==='line'&&b?.kind==='line'){
+        try{
+          const values=cornerPreviewValue.split(',').map(n=>Number(n.trim()))
+          const d1=cornerPreviewValue.trim()&&Number.isFinite(values[0])?values[0]:100
+          const d2=cornerMode==='fillet'?d1:(values[1]??d1)
+          const preview=cornerGeometry(a,b,cornerMode,d1,d2,'preview')
+          ctx.strokeStyle='#a6d6f1';ctx.lineWidth=2;ctx.setLineDash([6,3])
+          drawEntity(ctx,preview.a,camera,w,h);drawEntity(ctx,preview.b,camera,w,h)
+          if(preview.connector)drawEntity(ctx,preview.connector,camera,w,h)
+          ctx.setLineDash([])
+        }catch{/* invalid geometry is explained by command submission */}
+      }
+    }
     if(offsetPreview){
       const source=doc.entities.find(e=>e.id===offsetPreview.sourceId)
       if(source){
@@ -239,7 +273,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
