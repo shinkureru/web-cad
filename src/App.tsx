@@ -22,11 +22,12 @@ import { extendLine, joinLines } from './cad/advancedEditing'
 import type { CornerMode } from './cad/advancedEditing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
+import { makeCurveDimension,curveDimensionExtents,curveDimensionPicture } from './cad/curveDimensions'
 import { exportDxf, importDxf } from './cad/dxf'
 import { arcFromThreePoints, arcExtents, arcSweep, normalizeAngle } from './cad/arcs'
 import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
 import type { LibraryPreset } from './cad/blocks'
-import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType, DimensionMode, DimensionStyle } from './cad/types'
+import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType, DimensionMode, DimensionStyle, CurveMeasure } from './cad/types'
 
 const editTools: { id: EditTool; label: string; alias: string; Icon: typeof Minus }[] = [
   { id: 'move', label: '移動', alias: 'M', Icon: Move },
@@ -112,6 +113,7 @@ export default function App() {
   const [blockInsert, setBlockInsert] = useState<{ blockId: string } | null>(null)
   const [activeBlockId, setActiveBlockId] = useState<string>('')
   const [annotation, setAnnotation] = useState<{kind:'text'|DimensionMode; text:string; points:Point[]} | null>(null)
+  const [curveAnnotation,setCurveAnnotation] = useState<{measure:CurveMeasure;sourceId:string}|null>(null)
   const [newTextHeight, setNewTextHeight] = useState(150)
   const [grid, setGrid] = useState(true)
   const [osnap, setOsnap] = useState(true)
@@ -120,7 +122,7 @@ export default function App() {
   const [commandText, setCommandText] = useState('')
   const [preferences, setPreferences] = useState<CadPreferences>(loadPreferences)
   const [settingsOpen,setSettingsOpen]=useState(false)
-  const [log, setLog] = useState<string[]>(['Web CAD v1.2.0：精確長度／角度、動態尺寸預覽、物件夾點與垂足鎖點。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v1.3.0：可直接輸入的動態尺寸 HUD，新增 R／Ø／圓弧角度／弧長標註。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -215,9 +217,43 @@ export default function App() {
       logMessage('EXPLODE：已分解圖塊，圖塊定義仍保留在圖庫。')
     } catch (error) { showNotice(error instanceof Error ? error.message : '無法分解此圖塊') }
   }
+  function startCurveAnnotation(measure:CurveMeasure){
+    const source=doc.entities.find(e=>e.id===selectedId)
+    const sourceLayer=source&&doc.layers.find(l=>l.id===source.layerId)
+    const activeLayer=doc.layers.find(l=>l.id===doc.activeLayerId)
+    if(!source||selectedIds.length!==1||(source.kind!=='circle'&&source.kind!=='arc')
+      ||!sourceLayer?.visible){
+      showNotice('曲線標註：請先選取單一可見 CIRCLE 或 ARC。');return
+    }
+    if((measure==='angle'||measure==='arcLength')&&source.kind!=='arc'){
+      showNotice('弧長與角度標註只適用於 ARC。');return
+    }
+    if(!activeLayer?.visible||activeLayer.locked){
+      showNotice('請先切換至可見且未鎖定的標註圖層。');return
+    }
+    setCurveAnnotation({measure,sourceId:source.id})
+    setAnnotation(null);setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
+    setTool('select')
+    logMessage('曲線標註：請點選文字／尺寸弧的位置，或輸入絕對座標 X,Y。')
+    inputRef.current?.focus()
+  }
+  function finishCurveAnnotation(point:Point){
+    if(!curveAnnotation)return
+    const source=doc.entities.find(e=>e.id===curveAnnotation.sourceId)
+    if(!source){setCurveAnnotation(null);showNotice('來源圓或圓弧已不存在。');return}
+    try{
+      const item=makeCurveDimension(source,curveAnnotation.measure,point,uid(),
+        doc.activeLayerId,doc.activeDimensionStyleId??'standard')
+      editDoc(d=>({...d,entities:[...d.entities,item]}))
+      setCurveAnnotation(null);selectSingle(item.id)
+      logMessage('已新增 '+curveAnnotation.measure+' 原生曲線標註（幾何快照，非關聯式）。')
+    }catch(error){showNotice(error instanceof Error?error.message:'無法建立曲線標註')}
+  }
   function startAnnotation(kind:'text'|DimensionMode) {
     const layer=doc.layers.find(l=>l.id===doc.activeLayerId)
     if(!layer?.visible || layer.locked){showNotice('目前圖層已隱藏或鎖定，無法標註。');return}
+    setCurveAnnotation(null)
     setAnnotation({kind,text:'',points:[]})
     setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setTool('select');setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null);selectSingle(null)
@@ -362,7 +398,7 @@ export default function App() {
     }catch(error){showNotice(error instanceof Error?error.message:'角隅編輯無法完成')}
   }
   function startTool(next: Tool) {
-    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); selectSingle(null)
+    setCurveAnnotation(null);setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); selectSingle(null)
     if (next !== 'select') lastTool.current = next
     logMessage(next === 'select' ? '選取物件，按 Delete 刪除。' : `${tools.find(t => t.id === next)?.label}：指定第一點。`)
   }
@@ -501,6 +537,7 @@ export default function App() {
       else if (e.kind === 'polyline') p.push(...e.points)
       else if(e.kind==='circle')p.push({x:e.center.x-e.radius,y:e.center.y-e.radius},{x:e.center.x+e.radius,y:e.center.y+e.radius})
       else if(e.kind==='arc')p.push(...arcExtents(e))
+      else if(e.kind==='curveDimension')p.push(...curveDimensionExtents(e,getDimensionStyle(doc,e.styleId)))
       else p.push(...entityExtentPoints(e,e.kind==='dimension'?getDimensionStyle(doc,e.styleId):getDimensionStyle(doc)))
     })
     if (!p.length) return
@@ -512,6 +549,14 @@ export default function App() {
   }
   const runCommand = (text: string) => {
     const raw = text.trim()
+    if(curveAnnotation){
+      if(findCommand(raw,preferences.shortcuts)==='cancel'){
+        setCurveAnnotation(null);logMessage('已取消曲線標註。');return
+      }
+      const point=parsePointInput(raw,null,cursor,preferences.inputUnit)
+      if(point){finishCurveAnnotation(point);return}
+      showNotice('請輸入絕對座標 X,Y 或在畫布點選標註位置。');return
+    }
     if(cornerMode){
       if(findCommand(raw,preferences.shortcuts)==='cancel'){setCornerMode(null);return}
       finishCorner(raw||(cornerMode==='fillet'
@@ -600,6 +645,10 @@ export default function App() {
       case 'text': startAnnotation('text'); return
       case 'linearDimension': startAnnotation('linear'); return
       case 'alignedDimension': startAnnotation('aligned'); return
+      case 'radiusDimension': startCurveAnnotation('radius'); return
+      case 'diameterDimension': startCurveAnnotation('diameter'); return
+      case 'angleDimension': startCurveAnnotation('angle'); return
+      case 'arcLengthDimension': startCurveAnnotation('arcLength'); return
       case 'dimstyle': setPanelOpen(true); showNotice('請於右側「標註樣式」設定文字、箭頭及精度。'); return
       case 'plot': setPlotOpen(true); return
       case 'offset': startOffset(); return
@@ -647,7 +696,7 @@ export default function App() {
       if(ev.key==='Escape'&&(cadFocused||commandInput)&&!ev.repeat){
         ev.preventDefault()
         setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
-        setAnnotation(null);setOffsetMode(null);setTrimMode(null);setExtendMode(null)
+        setAnnotation(null);setCurveAnnotation(null);setOffsetMode(null);setTrimMode(null);setExtendMode(null)
         setCornerMode(null);setTool('select');selectSingle(null)
         logMessage('已取消操作.')
         return
@@ -735,7 +784,8 @@ export default function App() {
   const selectedEntity = doc.entities.find(e => e.id === selectedId)
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
-  const title = cornerMode
+  const title = curveAnnotation?'指定曲線標註文字位置（X,Y）或直接點畫布'
+    : cornerMode
     ? cornerMode==='fillet'?'圓角半徑 '+preferences.inputUnit+'（預設 '+(filletRadius/unitToMm(preferences.inputUnit))+'）'
       :'倒角距離 '+preferences.inputUnit+'（預設 '+chamferDistances.map(v=>v/unitToMm(preferences.inputUnit)).join(',')+'）'
     : extendMode?'點選直線欲延伸的端點，Esc 結束'
@@ -762,7 +812,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.2.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.3.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -803,7 +853,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onSelectMany={selectMany} onGripMove={finishGripEdit} inputUnit={preferences.inputUnit} onPick={finishPick} trimBoundaryIds={trimMode?.boundaryIds ?? extendMode?.boundaryIds ?? []} pickLabel={extendMode?'extend':trimMode?'trim':null} cornerMode={cornerMode} cornerPreviewValue={commandText} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode||!!extendMode} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => curveAnnotation ? finishCurveAnnotation(p) : offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onSelectMany={selectMany} onGripMove={finishGripEdit} inputUnit={preferences.inputUnit} confirmKey={preferences.confirmKey} curveAnnotation={curveAnnotation} onPick={finishPick} trimBoundaryIds={trimMode?.boundaryIds ?? extendMode?.boundaryIds ?? []} pickLabel={extendMode?'extend':trimMode?'trim':null} cornerMode={cornerMode} cornerPreviewValue={commandText} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode || !!curveAnnotation} annotation={annotation} pickMode={!!trimMode||!!extendMode} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
           {exchangeReport && <aside className="exchange-report" role="status" aria-label="檔案交換結果">
             <header><strong>{exchangeReport.title}</strong>
@@ -846,11 +896,28 @@ export default function App() {
         <div className="panel-divider"/>
         <div className="panel-section-heading"><span><MousePointer2 size={17}/> 物件資訊</span></div>
         <div className="info-block">{selectedEntity ? <>
-          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', arc: '圓弧', insert: '圖塊參照', text: '文字', dimension: '尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
+          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', arc: '圓弧', insert: '圖塊參照', text: '文字', dimension: '尺寸標註', curveDimension:'曲線尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
           <p>ID　{selectedEntity.id.slice(0, 8)}　{selectedLayer?.locked ? '（已鎖定）' : ''}</p>
           {selectedIds.length===1 && <GeometryProperties entity={selectedEntity}
             unit={preferences.inputUnit} disabled={!selectedLayer?.visible||!!selectedLayer?.locked}
             onCommit={finishGeometryEdit}/>}
+          {(selectedEntity.kind==='circle'||selectedEntity.kind==='arc') &&
+            <section className="curve-dimension-actions" aria-label="圓形與圓弧尺寸標註">
+              <p>曲線標註（非關聯式快照）</p>
+              <div>
+                <button onClick={()=>startCurveAnnotation('radius')}>DRA 半徑 R</button>
+                <button onClick={()=>startCurveAnnotation('diameter')}>DDI 直徑 Ø</button>
+                {selectedEntity.kind==='arc'&&<>
+                  <button onClick={()=>startCurveAnnotation('angle')}>DAN 角度</button>
+                  <button onClick={()=>startCurveAnnotation('arcLength')}>DAR 弧長</button>
+                </>}
+              </div>
+            </section>}
+          {selectedEntity.kind==='curveDimension'&&<p>
+            測量快照：{curveDimensionPicture(selectedEntity,
+              getDimensionStyle(doc,selectedEntity.styleId)).label.text}
+            （來源幾何修改後不自動更新）
+          </p>}
           {selectedEntity.kind==='arc' && <div className="annotation-entity-controls">
             <label>起始角度（°）<input type="number" aria-label="圓弧起始角度" step={1}
               value={selectedEntity.startAngle} disabled={selectedLayer?.locked||!selectedLayer?.visible}
@@ -960,7 +1027,7 @@ export default function App() {
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {(cursor.x/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)} <span className="status-sep">·</span> Y {(cursor.y/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">輸入 {preferences.inputUnit==='cm'?'公分 cm':'毫米 mm'} ／ 模型 mm</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>} 
     {settingsOpen && <CadSettingsDialog preferences={preferences} onApply={setPreferences} onClose={() => setSettingsOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.2.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.3.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
@@ -973,6 +1040,9 @@ export default function App() {
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
+      ['DRA / DDI', '先選取單一圓或圓弧 → DRA 半徑、DDI 直徑 → 指定標註文字位置'],
+      ['DAN / DAR', '先選取單一 ARC → DAN 圓弧角度、DAR 圓弧長度 → 點選尺寸線位置；此版為幾何快照'],
+      ['動態尺寸 HUD', 'L / PL 指定第一點後，可按 Tab 或 F2 進入游標旁輸入框，設定長度與角度，再按確認鍵套用'],
       ['動態尺寸輸入', '指定起點後，移動滑鼠可看到長度／角度；輸入 350cm<45 或 350cm 直接精確繪製'],
       ['夾點編輯', '選取單一圖元後拖曳藍色控制點；線段端點、聚合線頂點、圓半徑／圓心等可調整'],
       ['精確屬性', '選取直線／矩形／圓，於右側精確輸入長度、起終點、半徑或角度；會保留 mm 模型精度'],

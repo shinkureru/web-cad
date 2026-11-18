@@ -57,7 +57,7 @@ async function dragWorld(page:Page,x1:number,y1:number,x2:number,y2:number){
 }
 test('real command-line LINE creation, Undo/Redo, native JSON download and refresh persistence',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
   await expect(page.locator('canvas.cad-canvas')).toBeVisible()
   await sendCommand(page,'L')
   await sendCommand(page,'0,0')
@@ -96,7 +96,7 @@ test('actual Canvas drag: L→R enclosed, R→L crossing, batch MOVE and Undo',a
       start:{x:3200,y:1650},end:{x:3600,y:1650}},
   ])
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
   await dragWorld(page,2100,1400,2700,1700)
   await expect(page.locator('.console-history')).toContainText('框選：1 個')
   await dragWorld(page,2700,1400,2100,1700)
@@ -172,7 +172,7 @@ test('ARC created from three command points survives JSON storage and SVG plot U
 
 test('v1.1.0 accepts Space as CAD confirmation and exact explicit centimetres',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.2.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
   const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
   await input.fill('L')
   await input.press('Space')
@@ -301,4 +301,66 @@ test('v1.2.0 grip drag edits only the picked endpoint and supports undo',async({
   expect((await saved(page)).entities[0]).toMatchObject({start:{x:2200,y:1500}})
   await page.locator('button[title="復原 Ctrl+Z"]').click()
   await expect.poll(async()=>((await saved(page)).entities[0].end as {x:number}).x).toBe(2600)
+})
+
+
+test('v1.3.0 editable cursor-side HUD draws a precise centimeter-angle line',async({page})=>{
+  await page.goto('/')
+  await sendCommand(page,'L')
+  await sendCommand(page,'0,0')
+  const length=page.getByRole('textbox',{name:'動態長度'})
+  const angle=page.getByRole('textbox',{name:'動態角度'})
+  await expect(length).toBeVisible()
+  await length.fill('350cm')
+  await angle.fill('90')
+  await page.getByRole('button',{name:'套用動態尺寸'}).click()
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'line',start:{x:0,y:0},end:{x:0,y:3500}
+  })
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await waitEntities(page,0)
+})
+test('v1.3.0 circle radius annotation is a native JSON entity and undoable',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const point=await canvasWorld(page,2900,1500)
+  await page.mouse.click(point.x,point.y)
+  await sendCommand(page,'DRA')
+  const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
+  await expect(input).toHaveAttribute('placeholder',/曲線標註/)
+  await sendCommand(page,'2950,2100')
+  await waitEntities(page,2)
+  expect((await saved(page)).entities[1]).toMatchObject({
+    kind:'curveDimension',measure:'radius',radius:500,center:{x:2400,y:1500},
+    placement:{x:2950,y:2100}
+  })
+  await expect(page.locator('.info-block')).toContainText('R500')
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await waitEntities(page,1)
+})
+test('v1.3.0 ARC length and angular commands create calculated snapshot labels',async({page})=>{
+  await seed(page,[{id:'source-arc',kind:'arc',layerId:'wall',
+    center:{x:2400,y:1500},radius:500,startAngle:0,endAngle:180}])
+  await page.goto('/')
+  const top=await canvasWorld(page,2400,2000)
+  await page.mouse.click(top.x,top.y)
+  await sendCommand(page,'DAR')
+  await sendCommand(page,'2400,2300')
+  await waitEntities(page,2)
+  expect((await saved(page)).entities[1]).toMatchObject({
+    kind:'curveDimension',measure:'arcLength',radius:500
+  })
+  await expect(page.locator('.info-block')).toContainText('⌒1571')
+  const arcNear=await canvasWorld(page,2675,1918.33)
+  await page.mouse.click(arcNear.x,arcNear.y)
+  await sendCommand(page,'DAN')
+  await sendCommand(page,'2400,2600')
+  await waitEntities(page,3)
+  expect((await saved(page)).entities[2]).toMatchObject({
+    kind:'curveDimension',measure:'angle',radius:500,
+    startAngle:0,endAngle:180
+  })
+  await expect(page.locator('.info-block')).toContainText('180°')
 })

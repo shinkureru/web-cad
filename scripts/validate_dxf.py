@@ -20,6 +20,7 @@ for kind in ('INSERT', 'TEXT', 'DIMENSION', 'ARC'):
     assert kind in types, f'Missing expected modelspace entity {kind}'
 assert len([e for e in entities if e.dxftype() == 'DIMENSION']) >= 2
 arcs = [e for e in entities if e.dxftype() == 'ARC']
+assert len(arcs) >= 2, 'Snapshot angular DIM must be emitted as real ARC and LINE/TEXT geometry'
 assert arcs and abs(arcs[0].dxf.radius - 500) < 0.001
 assert abs(arcs[0].dxf.start_angle - 350) < 0.001
 assert abs(arcs[0].dxf.end_angle - 45) < 0.001
@@ -27,6 +28,8 @@ insert_names = [e.dxf.name for e in entities if e.dxftype() == 'INSERT']
 assert insert_names and all(name in doc.blocks for name in insert_names)
 texts = [e.dxf.text for e in entities if e.dxftype() == 'TEXT']
 assert any('\\U+' in text or '廚' in text for text in texts), 'Chinese text should survive encoding'
+assert any('R500' in text for text in texts), 'Expanded radius dimension label missing'
+assert any('55' in text for text in texts), 'Expanded arc-angle dimension label missing'
 auditor = doc.audit()
 if auditor.errors:
     print('DXF auditor errors:')

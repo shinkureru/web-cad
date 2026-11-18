@@ -5,6 +5,7 @@
  */
 import { createDocument, parseDocument, uid } from './document'
 import { dimensionGeometry, DEFAULT_DIMENSION_STYLES, getDimensionStyle } from './annotations'
+import { curveDimensionPicture } from './curveDimensions'
 import { normalizeAngle, arcSweep } from './arcs'
 import type { CadDocument, CadEntity, CadPrimitive, DimensionEntity, DimensionStyle, LineType, Point } from './types'
 
@@ -139,6 +140,26 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
       }
     }
   }
+  function drawCurveDimension(dim:Extract<CadEntity,{kind:'curveDimension'}>){
+    const note='曲線半徑／直徑／弧長／角度標註已展開為 DXF LINE/ARC/TEXT；重新匯入不會恢復原生曲線尺寸標註物件。'
+    if(!warnings.includes(note))warnings.push(note)
+    const geo=curveDimensionPicture(dim,getDimensionStyle(drawing,dim.styleId))
+    const common={layerId:dim.layerId,color:dim.color,lineweight:dim.lineweight,linetype:dim.linetype}
+    for(const [i,line] of geo.lines.entries())drawable({
+      id:dim.id+'_line'+i,kind:'line',...common,start:line.a,end:line.b
+    })
+    for(const [i,arc] of geo.arcs.entries())drawable({
+      id:dim.id+'_arc'+i,kind:'arc',...common,
+      center:arc.center,radius:arc.radius,startAngle:arc.startAngle,endAngle:arc.endAngle
+    })
+    for(const [i,triangle] of geo.arrowheads.entries())drawable({
+      id:dim.id+'_arrow'+i,kind:'polyline',...common,
+      points:[...triangle,triangle[0]]
+    })
+    drawable({id:dim.id+'_text',kind:'text',...common,
+      text:geo.label.text,position:geo.label.position,
+      height:geo.label.height,rotation:geo.label.rotation})
+  }
   function drawDimensionPicture(dim:DimensionEntity){
     const geom=dimensionGeometry(dim,getDimensionStyle(drawing,dim.styleId))
     for(const [i,{a,b}] of geom.lines.entries())drawable({
@@ -247,7 +268,8 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
         out(50,entity.axis==='horizontal'?0:90)
         out(100,'AcDbRotatedDimension')
       }
-    }else drawable(entity)
+    }else if(entity.kind==='curveDimension')drawCurveDimension(entity)
+    else drawable(entity)
   }
   end()
   sec('OBJECTS')

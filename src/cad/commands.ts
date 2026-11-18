@@ -4,7 +4,7 @@ import { roundPoint } from './geometry'
 export type InputUnit = 'mm' | 'cm'
 export const unitToMm = (unit: InputUnit): number => unit==='cm'?10:1
 
-const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim' | 'extend' | 'fillet' | 'chamfer'> = {
+const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'save' | 'fit' | 'cancel' | 'block' | 'insert' | 'explode' | 'text' | 'linearDimension' | 'alignedDimension' | 'dimstyle' | 'plot' | 'offset' | 'trim' | 'extend' | 'fillet' | 'chamfer' | 'radiusDimension' | 'diameterDimension' | 'angleDimension' | 'arcLengthDimension'> = {
   L: 'line', LINE: 'line', W: 'wall', WALL: 'wall', PL: 'polyline', PLINE: 'polyline',
   REC: 'rectangle', RECTANG: 'rectangle', RECTANGLE: 'rectangle',
   C: 'circle', CIRCLE: 'circle', A: 'arc', ARC: 'arc', SELECT: 'select', ESC: 'cancel',
@@ -14,6 +14,10 @@ const aliases: Record<string, Tool | EditTool | 'undo' | 'redo' | 'delete' | 'sa
   T: 'text', TEXT: 'text', DT: 'text', DTEXT: 'text',
   DLI: 'linearDimension', DIMLINEAR: 'linearDimension',
   DAL: 'alignedDimension', DIMALIGNED: 'alignedDimension',
+  DRA:'radiusDimension', DIMRADIUS:'radiusDimension',
+  DDI:'diameterDimension', DIMDIAMETER:'diameterDimension',
+  DAN:'angleDimension', DIMANGULAR:'angleDimension',
+  DAR:'arcLengthDimension', DIMARC:'arcLengthDimension',
   D: 'dimstyle', DIMSTYLE: 'dimstyle',
   O: 'offset', OFFSET: 'offset', TR: 'trim', TRIM: 'trim',
   EX: 'extend', EXTEND: 'extend',
@@ -43,6 +47,10 @@ export const EDITABLE_SHORTCUTS = [
   {command:'text',key:'T',label:'文字 TEXT'},
   {command:'linearDimension',key:'DLI',label:'線性尺寸 DIMLINEAR'},
   {command:'alignedDimension',key:'DAL',label:'對齊尺寸 DIMALIGNED'},
+  {command:'radiusDimension',key:'DRA',label:'半徑標註 DIMRADIUS'},
+  {command:'diameterDimension',key:'DDI',label:'直徑標註 DIMDIAMETER'},
+  {command:'angleDimension',key:'DAN',label:'圓弧角度標註 DIMANGULAR'},
+  {command:'arcLengthDimension',key:'DAR',label:'弧長標註 DIMARC'},
   {command:'block',key:'B',label:'建立圖塊 BLOCK'},
   {command:'insert',key:'I',label:'插入圖塊 INSERT'},
   {command:'explode',key:'X',label:'分解圖塊 EXPLODE'},

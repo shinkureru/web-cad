@@ -1,6 +1,7 @@
 import type { Camera, CadEntity, CadPrimitive, Point, Snap } from './types'
 import { arcDistance, arcPoint, arcPrimitiveIntersections, arcContainsAngle } from './arcs'
 import { dimensionGeometry, getDimensionStyle } from './annotations'
+import { curveDimensionPicture } from './curveDimensions'
 
 export const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y)
 export const roundPoint = (p: Point): Point => ({ x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 })
@@ -49,6 +50,7 @@ export function entitySnaps(entity: CadEntity): Snap[] {
         point:{x:entity.center.x+entity.radius*Math.cos(a*Math.PI/180),
           y:entity.center.y+entity.radius*Math.sin(a*Math.PI/180)},kind:'象限點' as const}))
     ]
+    case 'curveDimension':return [{point:entity.placement,kind:'端點'}]
     case 'insert': return [] // Caller expands block references using the document before snapping.
     case 'text': return [{ point: entity.position, kind: '端點' }]
     case 'dimension': return [{point:entity.start,kind:'端點'},{point:entity.end,kind:'端點'}]
@@ -117,6 +119,14 @@ export function hitTest(p: Point, entity: CadEntity): number {
       const maxY = entity.height * .5
       return Math.hypot(Math.max(0,-localX,localX-width),Math.max(0,minY-localY,localY-maxY))
     }
+    case 'curveDimension':{
+      const geom=curveDimensionPicture(entity,getDimensionStyle())
+      const dLine=Math.min(Infinity,...geom.lines.map(s=>segmentDistance(p,s.a,s.b)))
+      const dArc=Math.min(Infinity,...geom.arcs.map(a=>arcDistance(p,{
+        ...a,id:entity.id,layerId:entity.layerId,kind:'arc'
+      })))
+      return Math.min(dLine,dArc,distance(p,geom.label.position))
+    }
     case 'dimension': {
       const geom = dimensionGeometry(entity,getDimensionStyle())
       return Math.min(...geom.lines.map(s => segmentDistance(p,s.a,s.b)),
@@ -139,7 +149,7 @@ export function entitySegments(entity: CadEntity): Segment[] {
       const a = entity.start, b = entity.end
       return segments([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], true)
     }
-    case 'circle': case 'arc': case 'insert': case 'text': return []
+    case 'circle': case 'arc': case 'insert': case 'text': case 'curveDimension': return []
     case 'dimension': return [] // Dimensions do not generate drawing intersection snaps.
   }
 }

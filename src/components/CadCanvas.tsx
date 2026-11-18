@@ -9,6 +9,11 @@ import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 import { offsetEntity } from '../cad/precisionEdit'
 import { cornerGeometry, windowSelection } from '../cad/advancedEditing'
 import { arcFromThreePoints } from '../cad/arcs'
+import { makeCurveDimension,curveDimensionPicture } from '../cad/curveDimensions'
+import { resolveDynamicTarget } from '../cad/dynamicInput'
+import { shouldSubmitCommandKey } from '../cad/preferences'
+import type {ConfirmKey} from '../cad/preferences'
+import type {CurveMeasure} from '../cad/types'
 import { entityGrips, moveGrip } from '../cad/grips'
 import type { InputUnit } from '../cad/commands'
 import type { CornerMode } from '../cad/advancedEditing'
@@ -20,7 +25,8 @@ interface Props {
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
   onSelectMany: (ids: string[], extend: boolean) => void
   onGripMove: (entityId:string,gripId:string,point:Point)=>void
-  inputUnit: InputUnit
+  inputUnit: InputUnit; confirmKey:ConfirmKey
+  curveAnnotation:{measure:CurveMeasure;sourceId:string}|null
   onPick: (id: string | null, point: Point) => void; pickMode: boolean
   pickLabel: 'trim'|'extend'|null; cornerMode: CornerMode|null; cornerPreviewValue: string
   trimBoundaryIds: string[]; offsetPreview: {sourceId: string; distance: number} | null
@@ -54,6 +60,31 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
         y:docEntity.position.y - Math.cos(rad)*i*docEntity.height*1.3,
       },docEntity.height,docEntity.rotation,camera,w,h,'left')
     })
+    return
+  }
+  if(docEntity.kind==='curveDimension'){
+    const geo=curveDimensionPicture(docEntity,style??getDimensionStyle())
+    ctx.beginPath()
+    for(const seg of geo.lines){
+      const a=toScreen(seg.a,camera,w,h),b=toScreen(seg.b,camera,w,h)
+      ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y)
+    }
+    for(const arc of geo.arcs){
+      const c=toScreen(arc.center,camera,w,h)
+      ctx.moveTo(c.x+arc.radius*camera.scale*Math.cos(-arc.startAngle*Math.PI/180),
+        c.y+arc.radius*camera.scale*Math.sin(-arc.startAngle*Math.PI/180))
+      ctx.arc(c.x,c.y,arc.radius*camera.scale,
+        -arc.startAngle*Math.PI/180,-arc.endAngle*Math.PI/180,true)
+    }
+    ctx.stroke()
+    for(const arrow of geo.arrowheads){
+      ctx.beginPath()
+      arrow.forEach((v,i)=>{const point=toScreen(v,camera,w,h);
+        if(i===0)ctx.moveTo(point.x,point.y);else ctx.lineTo(point.x,point.y)})
+      ctx.closePath();ctx.fillStyle=ctx.strokeStyle;ctx.fill()
+    }
+    drawLabel(ctx,geo.label.text,geo.label.position,
+      geo.label.height,geo.label.rotation,camera,w,h)
     return
   }
   if (docEntity.kind === 'dimension') {
@@ -108,7 +139,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onGripMove, inputUnit, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onGripMove, inputUnit, confirmKey, curveAnnotation, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -117,6 +148,24 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
   const drag = useRef<{ pointerId: number; at: Point; cam: Camera } | null>(null)
   const selectionRef=useRef<{pointerId:number;from:Point;shift:boolean;dragging:boolean}|null>(null)
   const [selectionBox,setSelectionBox]=useState<{from:Point;to:Point}|null>(null)
+  const [hudLength,setHudLength]=useState('')
+  const [hudAngle,setHudAngle]=useState('')
+  const [hudError,setHudError]=useState('')
+  const hudLengthRef=useRef<HTMLInputElement>(null)
+  useEffect(()=>{setHudLength('');setHudAngle('');setHudError('')},
+    [draft?.tool,draft?.points.length])
+  const hudAvailable=!!draft?.points.length&&
+    ['line','polyline','rectangle','circle','wall'].includes(draft.tool)
+  const hudBase=draft?.points.at(-1)
+  const hudPoint=()=>{
+    if(!hudBase)return
+    const target=resolveDynamicTarget(hudBase,hover,hudLength,hudAngle,inputUnit)
+    if(!target){setHudError('請輸入正數長度與有效角度');return}
+    setHudError('')
+    onPoint(target)
+    canvasRef.current?.focus({preventScroll:true})
+  }
+
   const gripDrag=useRef<{pointerId:number;entityId:string;gripId:string;from:Point}|null>(null)
   const [gripPreview,setGripPreview]=useState<{entityId:string;gripId:string;point:Point}|null>(null)
 
@@ -170,7 +219,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.lineWidth = selectedIds.includes(entity.id) ? 2.4 : Math.max(1, Math.min(4, weight * 4))
       const type = entity.linetype && entity.linetype !== 'ByLayer' ? entity.linetype : layer.linetype ?? 'continuous'
       ctx.setLineDash(type === 'dashed' ? [9, 6] : type === 'center' ? [16, 5, 3, 5] : [])
-      drawEntity(ctx, entity, camera, w, h, entity.kind==='dimension' ? getDimensionStyle(doc,entity.styleId) : undefined)
+      drawEntity(ctx, entity, camera, w, h, (entity.kind==='dimension'||entity.kind==='curveDimension') ? getDimensionStyle(doc,entity.styleId) : undefined)
       ctx.setLineDash([])
     }
     // v1.2 — draw editable model grips and live preview without mutating history.
@@ -264,6 +313,19 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         }
       }
     }
+    if(curveAnnotation){
+      const source=doc.entities.find(e=>e.id===curveAnnotation.sourceId)
+      if(source){
+        ctx.save();ctx.strokeStyle='#90d9e9';ctx.lineWidth=1.5
+        ctx.setLineDash([5,4])
+        try{
+          const ghost=makeCurveDimension(source,curveAnnotation.measure,hover,
+            'preview',doc.activeLayerId,doc.activeDimensionStyleId??'standard')
+          drawEntity(ctx,ghost,camera,w,h,getDimensionStyle(doc,ghost.styleId))
+        }catch{/* invalid preview position does not affect the model */}
+        ctx.restore()
+      }
+    }
     if(annotation){
       ctx.strokeStyle='#80d0f0';ctx.lineWidth=1.3;ctx.setLineDash([6,5])
       if(annotation.kind==='text' && annotation.text){
@@ -348,7 +410,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue,gripPreview,inputUnit,pickMode,pointInputMode,tool])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue,gripPreview,inputUnit,pickMode,pointInputMode,tool,curveAnnotation])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -487,11 +549,41 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
   return <div className="drawing-surface" ref={hostRef}>
     <canvas ref={canvasRef} className="cad-canvas" tabIndex={0} aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : selectionBox?'crosshair':'crosshair' }}
       onPointerMove={handlePointerMove} onPointerDown={handlePointerDown}
+      onKeyDown={e=>{
+        if(hudAvailable&&(e.key==='Tab'||e.key==='F2')&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
+          e.preventDefault();e.stopPropagation();hudLengthRef.current?.focus()
+        }
+      }}
       onPointerUp={handlePointerUp}
       onPointerCancel={() => { drag.current = null;gripDrag.current=null;setGripPreview(null);selectionRef.current=null;setSelectionBox(null) }}
       onContextMenu={e => e.preventDefault()}
       onAuxClick={e => e.preventDefault()}
       onWheel={e => { e.preventDefault(); onCameraChange(zoomAt(camera, e.deltaY < 0 ? 1.15 : 1 / 1.15, localPosition(e), size.width, size.height)) }} />
+    {hudAvailable&&hudBase&&<div className="dynamic-hud" role="group"
+      aria-label="動態尺寸輸入"
+      style={{left:Math.min(Math.max(12,toScreen(hover,camera,size.width,size.height).x+16),Math.max(12,size.width-230)),
+        top:Math.min(Math.max(50,toScreen(hover,camera,size.width,size.height).y+20),Math.max(50,size.height-120))}}>
+      <label>長度 ({inputUnit})<input ref={hudLengthRef} aria-label="動態長度" type="text"
+        inputMode="decimal" value={hudLength} placeholder="350cm"
+        onChange={e=>{setHudLength(e.target.value);setHudError('')}}
+        onKeyDown={e=>{
+          if(e.key==='Escape'){e.stopPropagation();e.preventDefault();canvasRef.current?.focus()}
+          else if(shouldSubmitCommandKey(e.key,confirmKey)&&!e.nativeEvent.isComposing){
+            e.stopPropagation();e.preventDefault();hudPoint()
+          }
+        }}/></label>
+      <label>角度 (°)<input aria-label="動態角度" type="text"
+        inputMode="decimal" value={hudAngle} placeholder="依滑鼠方向"
+        onChange={e=>{setHudAngle(e.target.value);setHudError('')}}
+        onKeyDown={e=>{
+          if(e.key==='Escape'){e.stopPropagation();e.preventDefault();canvasRef.current?.focus()}
+          else if(shouldSubmitCommandKey(e.key,confirmKey)&&!e.nativeEvent.isComposing){
+            e.stopPropagation();e.preventDefault();hudPoint()
+          }
+        }}/></label>
+      <button aria-label="套用動態尺寸" onClick={hudPoint}>套用</button>
+      {hudError&&<small role="alert">{hudError}</small>}
+    </div>}
     <div className="canvas-label"><span className="canvas-label-mark">⌗</span> 模型空間 <span className="canvas-label-sep">/</span> TOP <span className="canvas-label-sep">/</span> 2D 線框</div>
     <div className="canvas-guide">{pickLabel==='trim'?'TRIM：點擊線段／圓弧／整圓上欲刪除的區段；金色虛線為裁切邊界':
       pickLabel==='extend'?'EXTEND：點選靠近欲延伸端點的線段；金色虛線為邊界':

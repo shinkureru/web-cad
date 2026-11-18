@@ -173,3 +173,22 @@
 .precision-input-row input:focus{outline:1px solid #7bb7ed;border-color:#7bb7ed}
 .precision-input-row input:disabled{opacity:.5}
 @media(max-width:490px){.precision-properties-grid{grid-template-columns:1fr}}
+
+/* v1.3.0: cursor-side editable drawing input and circular dimensions. */
+.dynamic-hud{position:absolute;z-index:9;display:grid;grid-template-columns:minmax(65px,1fr) minmax(65px,1fr) auto;
+align-items:end;gap:5px;min-width:210px;max-width:260px;padding:8px;border-radius:7px;
+background:#162533f2;border:1px solid #53738b;box-shadow:0 6px 20px #0009;color:#d9e9f5}
+.dynamic-hud label{display:flex;flex-direction:column;min-width:0;gap:4px;font-size:10px;white-space:nowrap;color:#b8cadd}
+.dynamic-hud input{border:1px solid #55758f;border-radius:4px;min-width:0;width:100%;height:29px;
+padding:5px 6px;background:#0c1925;color:#fff;font:11px monospace}
+.dynamic-hud input:focus{outline:1px solid #80baf4;outline-offset:0}
+.dynamic-hud button{border:1px solid #6694b4;background:#274864;color:#fff;
+padding:5px 7px;font-size:11px;height:29px;border-radius:4px}
+.dynamic-hud small{grid-column:1/-1;color:#ffcfb9;font-size:10px}
+.curve-dimension-actions{margin:8px 0;padding:10px;border-radius:7px;border:1px solid #3d5265;background:#172434}
+.curve-dimension-actions p{font-size:11px;color:#bcd2e6;margin:0 0 7px}
+.curve-dimension-actions>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.curve-dimension-actions button{font-size:11px;padding:7px 5px;border:1px solid #54718c;border-radius:5px;background:#273d55;color:#e6f1fd}
+.curve-dimension-actions button:hover{background:#355577}
+@media(max-width:630px){.dynamic-hud{min-width:190px;max-width:210px;padding:6px;gap:3px}
+.dynamic-hud input,.dynamic-hud button{height:27px;font-size:10px}}
