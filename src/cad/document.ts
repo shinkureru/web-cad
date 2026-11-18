@@ -52,6 +52,15 @@ function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
       && e.text.length > 0 && e.text.length <= 2048
       && Number.isFinite(e.height) && e.height > 0 && e.height <= 10000
       && Number.isFinite(e.rotation)
+    case 'curveDimension': return isPoint(e.center)&&isPoint(e.placement)
+      && Number.isFinite(e.radius)&&e.radius>0&&e.radius<=1e9
+      && ['radius','diameter','arcLength','angle'].includes(e.measure)
+      && typeof e.styleId==='string'
+      && (e.measure==='radius'||e.measure==='diameter'
+        || (Number.isFinite(e.startAngle)&&Number.isFinite(e.endAngle)
+          && e.startAngle!==undefined&&e.endAngle!==undefined
+          && e.startAngle>=0&&e.startAngle<360&&e.endAngle>=0&&e.endAngle<360
+          && arcSweep({startAngle:e.startAngle,endAngle:e.endAngle})>1e-5))
     case 'dimension': return isPoint(e.start) && isPoint(e.end) && isPoint(e.placement)
       && (e.start.x !== e.end.x || e.start.y !== e.end.y)
       && ['linear','aligned'].includes(e.mode) && ['horizontal','vertical'].includes(e.axis)
@@ -103,7 +112,7 @@ export function parseDocument(input: unknown): CadDocument {
   if (!Array.isArray(styles) || !styles.length || styles.length > 50 || !styles.every(isDimensionStyle)
     || new Set(styles.map(s => s.id)).size !== styles.length
     || (d.activeDimensionStyleId !== undefined && !styles.some(s => s.id === d.activeDimensionStyleId))
-    || d.entities.some(e => e.kind === 'dimension' && !styles.some(s => s.id === e.styleId))) {
+    || d.entities.some(e => (e.kind === 'dimension'||e.kind==='curveDimension') && !styles.some(s => s.id === e.styleId))) {
     throw new Error('標註樣式或關聯無效')
   }
   return d as CadDocument
