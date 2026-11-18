@@ -143,6 +143,14 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
   function drawCurveDimension(dim:Extract<CadEntity,{kind:'curveDimension'}>){
     const note='曲線半徑／直徑／弧長／角度標註已展開為 DXF LINE/ARC/TEXT；重新匯入不會恢復原生曲線尺寸標註物件。'
     if(!warnings.includes(note))warnings.push(note)
+    if(dim.sourceId){
+      const linkedWarning='關聯式曲線標註在 DXF 中將失去來源追蹤；重新匯入只會保留可見線段與文字。'
+      if(!warnings.includes(linkedWarning))warnings.push(linkedWarning)
+    }
+    if(dim.orphaned){
+      const staleWarning='圖中存在來源已遺失的凍結尺寸標註，匯出前須重新核對尺寸。'
+      if(!warnings.includes(staleWarning))warnings.push(staleWarning)
+    }
     const geo=curveDimensionPicture(dim,getDimensionStyle(drawing,dim.styleId))
     const common={layerId:dim.layerId,color:dim.color,lineweight:dim.lineweight,linetype:dim.linetype}
     for(const [i,line] of geo.lines.entries())drawable({
