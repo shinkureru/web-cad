@@ -1,10 +1,10 @@
-# WEB CAD v0.8.0 — EXTEND、FILLET、CHAMFER 與框選多物件
+# WEB CAD v0.8.0 起 — EXTEND、FILLET、CHAMFER 與框選多物件（v0.9.0 ARC 更新）
 
 > 此版本為可測試的 2D CAD 操作子集，所有模型座標均採 mm。維持 `.webcad.json` version 1 與前版基本 DXF 2000 圖元交換。尚未達到 AutoCAD 全部指令與施工製圖相容程度。
 
 ## EX / EXTEND — 延伸
 
-1. 先選取一個或多個「延伸邊界」，可用 **Shift 點選** 或拖曳框選。支援邊界：LINE、RECT、POLYLINE、CIRCLE、單層 BLOCK/INSERT。
+1. 先選取一個或多個「延伸邊界」，可用 **Shift 點選** 或拖曳框選。支援邊界：LINE、RECT、POLYLINE、CIRCLE、**ARC**、單層 BLOCK/INSERT。
 2. 輸入 `EX` 或 `EXTEND`，或點選左側「延伸 EX」。已選邊界會以金色虛線標示。
 3. 點擊欲延伸 **LINE** 的端點附近。該端點沿直線方向向外延伸，直到碰到最近的**有限**裁切邊界。可以連續延伸其他直線。
 4. 按 Esc 結束、Ctrl+Z 復原。
@@ -22,7 +22,7 @@
 
 實例：LINE `1000,0 → 0,0` 和 LINE `0,0 → 0,1000`，半徑 100 mm，切點分別為 `100,0` 與 `0,100`，圓心 `100,100`。
 
-**重要**：本版資料模型尚無原生 ARC。FILLET 會建立一條由多段短直線組成的 **POLYLINE 近似圓弧**；設計目標是弦高誤差約 0.1 mm，超過可負擔細分數時會拒絕生成。匯出 DXF 仍是 LWPOLYLINE，不是可直接以 ARC 半徑編輯的實體圓弧。這不是完整的 AutoCAD FILLET 功能。
+**v0.9.0 更新**：FILLET 現在建立**原生 ARC**，保留真正圓心、半徑與起訖角度；DXF 匯出亦為 ARC。v0.8.0 已保存的舊式近似 POLYLINE 不會自動轉換。仍只支援兩條 LINE，並非完整 AutoCAD FILLET。
 
 兩線平行、內部十字交叉、零長、半徑超出可用線長、過小到無法可靠以 0.001 mm 幾何精度表示時，將提示並拒絕修改；請先 TRIM 或調整線段。
 
@@ -51,7 +51,7 @@
 
 - `src/cad/advancedEditing.ts`：純 TypeScript EXTEND、FILLET／CHAMFER、框選模型邊界與可見／鎖層判斷。
 - `src/cad/advancedEditing.test.ts`：延伸至最近有限交點、圓與圖塊邊界、曲線近似切點、過度半徑拒絕、四象限線、兩方向框選、原子圖塊／鎖層、JSON、Undo/Redo。
-- 所有成果以現有 LINE、POLYLINE、CIRCLE 等圖元保存，沒有更動原生 JSON schema 版本；可沿用既有 DXF 2000 子集，但 FILLET 近似弧線不是 ARC。
+- 所有成果以現有 LINE、POLYLINE、CIRCLE 等圖元保存，維持原生 JSON `version:1`，新 FILLET 的真 ARC 也支援 DXF 2000 子集雙向交換。
 - GitHub CI 會跑 Vitest、TypeScript 與 Vite build；**仍需人工測試滑鼠拖曳、輸入框焦點、實際中文 UI、DXF 外部 CAD 和印表機出圖**。
 - 在目前原型階段，請固定使用「備份 JSON」保存重要工程檔。不得把尚未實際驗收的輸出當作施工定稿。
 
@@ -62,6 +62,6 @@
 3. **倒角**：兩條 1000 mm 直角線，CHAMFER 100,150，核對新斜線長 `√(100²+150²) ≈ 180.278 mm`。
 4. **框選**：畫一條完全落入矩形內的線、另一條穿過框邊的線；左→右只選前者，右→左選兩者；Shift、Ctrl+A 與鎖層測試。
 5. **多選編修**：框選三條 LINE，一次 MOVE 500 mm／COPY／ROTATE／Delete，驗證原圖元數量、位置和 Undo/Redo。
-6. **格式與列印回歸**：JSON、DXF、PLOT 的常見流程仍正常，尤其 FILLET 在 DXF 是 POLYLINE，不是 ARC。
+6. **格式與列印回歸**：JSON、DXF、PLOT 的常見流程仍正常，尤其 FILLET 在 DXF **現在是 ARC**，舊圖中原本的近似 POLYLINE 仍會保留。
 
-後續批次可考慮真正的 ARC（含 DXF ARC）、多邊形弧段與曲線級 TRIM、EX 高階模式、端點夾點編輯與物件精準物件捕捉。
+v0.9.0 已有真正的 ARC（含 DXF ARC）與原生 ARC 修剪；後續仍需處理 CIRCLE 修剪成 ARC、LWPOLYLINE bulge 圓弧、多邊形弧段與 EX 高階模式、端點夾點編輯。
