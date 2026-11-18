@@ -5,6 +5,7 @@
  */
 import { createDocument, parseDocument, uid } from './document'
 import { dimensionGeometry, DEFAULT_DIMENSION_STYLES, getDimensionStyle } from './annotations'
+import { normalizeAngle, arcSweep } from './arcs'
 import type { CadDocument, CadEntity, CadPrimitive, DimensionEntity, DimensionStyle, LineType, Point } from './types'
 
 export interface DxfTransfer { text: string; warnings: string[] }
@@ -111,6 +112,10 @@ export function exportDxf(doc:CadDocument):DxfTransfer {
     }else if(entity.kind==='circle'){
       rec('CIRCLE');common(entity,forcedLayer);out(100,'AcDbCircle')
       xy(10,entity.center);out(40,entity.radius)
+    }else if(entity.kind==='arc'){
+      rec('ARC');common(entity,forcedLayer);out(100,'AcDbCircle')
+      xy(10,entity.center);out(40,entity.radius);out(100,'AcDbArc')
+      out(50,entity.startAngle);out(51,entity.endAngle)
     }else if(entity.kind==='polyline' || entity.kind==='rectangle'){
       let points=entity.kind==='polyline'?[...entity.points]:[
         entity.start,{x:entity.end.x,y:entity.start.y},entity.end,
@@ -390,6 +395,15 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
         if(radius<=0){mark('CIRCLE（半徑無效）');return null}
         return {kind:'circle',id:uid(),...common,center:pointGroup(r,10,scale),radius}
       }
+      if(kind==='ARC'){
+        const radius=numberGroup(r,40)*scale
+        const startAngle=normalizeAngle(numberGroup(r,50)),endAngle=normalizeAngle(numberGroup(r,51))
+        if(radius<=0||radius>1e9||arcSweep({startAngle,endAngle})<1e-5){
+          mark('ARC（半徑或角度無效）');return null
+        }
+        return {kind:'arc',id:uid(),...common,center:pointGroup(r,10,scale),
+          radius,startAngle,endAngle}
+      }
       if(kind==='LWPOLYLINE'){
         const points:Point[]=[]
         let index=-1
@@ -447,12 +461,12 @@ export function importDxf(source:string,fileName='匯入圖面'):DxfImport {
     if(!block)continue
     for(const rec of b.entities){
       const e=parseBasic(rec,true,referencedBlockNames.has(name.toUpperCase()))
-      if(e && ['line','polyline','rectangle','circle'].includes(e.kind)){
+      if(e && ['line','polyline','rectangle','circle','arc'].includes(e.kind)){
         const item=e as CadPrimitive
         if(item.kind==='line')block.entities.push({...item,
           start:{x:item.start.x-block.base.x,y:item.start.y-block.base.y},
           end:{x:item.end.x-block.base.x,y:item.end.y-block.base.y}})
-        else if(item.kind==='circle')block.entities.push({...item,
+        else if(item.kind==='circle'||item.kind==='arc')block.entities.push({...item,
           center:{x:item.center.x-block.base.x,y:item.center.y-block.base.y}})
         else if(item.kind==='polyline')block.entities.push({...item,
           points:item.points.map(p=>({x:p.x-block.base.x,y:p.y-block.base.y}))})
