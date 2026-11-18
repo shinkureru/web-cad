@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v1.0.0 技術原型／Chromium 瀏覽器回歸里程碑**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
+> **v1.1.0 技術原型／可調整快捷鍵及 cm／mm 精準輸入**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
 ## 本機執行
 
@@ -20,6 +20,9 @@ npm run test:e2e
 ## 已支援
 
 - 毫米模型空間、Canvas 畫布、滾輪游標中心縮放、中鍵平移、全圖縮放
+- **v1.1.0 鍵盤偏好**：上方「設定」可選擇空白鍵、Enter 或兩者確認指令；22 個常用 CAD 主要快捷代碼可自訂（會檢查重複、保留英文字完整指令），設定存本機，與圖面檔分離。
+- **v1.1.0 公分精準輸入**：指令可使用 30cm、125mm、1.25m，也支援 300cm,150cm、@30cm,10cm、@30cm<45；預設輸入單位可在 mm／cm 切換，內部模型與 DXF 始終為 mm，精度量化至 0.001 mm。
+- **v1.1.0 快捷鍵衝突保護**：CAD 快捷鍵只在畫布／指令列合適情境啟用；瀏覽器 Ctrl／Command+P/L/T/W/R/S/F 不攔截；一般輸入框及中文 IME 保留文字／空白鍵操作。文字內容與 BLOCK 名稱請用 Enter 結束（避免空白鍵誤提交）。
 - **W / WALL**：依中心線兩點與可設定牆厚（預設 120 mm）畫出單段封閉的雙線牆輪廓；尚無自動接角／門洞
 - **O / OFFSET**：選取直線、圓、圓弧、矩形或直線段聚合線，指定偏移毫米距離及側邊點；保留來源，可重複偏移。
 - **TR / TRIM**：Shift 多選裁切邊界（線、圓、ARC、矩形、聚合線、基本圖塊），點擊要刪除的直線、開放聚合線、ARC 或 CIRCLE 區段；整圓將轉成仍可編輯的原生 ARC，保留真實半徑和角度。
@@ -42,7 +45,9 @@ npm run test:e2e
 - 選取物件後設定圖層、顏色、線粗、線型，支援 ByLayer 覆寫
 - localStorage 自動儲存、匯入／匯出 `.webcad.json`、可編輯的示範平面圖
 - **ASCII DXF 2000 (AC1015) 匯入／匯出**：基本 2D 圖元、圖層、文字、單層圖塊與基本線性／對齊標註；匯入不支援的物件會提示略過數量，使用者確認後才取代工作區
-- **PLOT／Ctrl+P（macOS ⌘P）定比例出圖**：A3/A4、橫／直向、固定 1:20/50/100/200/500、SVG 向量下載、瀏覽器列印／另存 PDF；使用 mm 頁面單位與實體線粗；超出紙張有效區域時禁止裁斷輸出。
+- **PLOT 指令或上方按鈕定比例出圖**：A3/A4、橫／直向、固定 1:20/50/100/200/500、SVG 向量下載、瀏覽器列印／另存 PDF；使用 mm 頁面單位與實體線粗；超出紙張有效區域時禁止裁斷輸出。
+
+新增鍵盤與公分設定詳見 [docs/KEYBOARD_AND_UNITS.md](docs/KEYBOARD_AND_UNITS.md)。瀏覽器 Ctrl／Command+P 目前保留**原生列印**，要按照 CAD 模型比例出圖，請使用 PLOT 指令／上方按鈕。
 
 支援 Shift 多選、框選與批次編修；**尚未支援** 完整 AutoCAD TRIM／OFFSET（多個圓弧缺口、封閉多邊形與高階選取模式等）、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
 
@@ -120,6 +125,7 @@ npm run test:e2e
 - [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md) — EXTEND／FILLET／CHAMFER、框選與多物件操作
 - [`docs/ARC_NATIVE.md`](docs/ARC_NATIVE.md) — v0.9.0 原生 ARC、三點定弧、DXF ARC、修剪及驗收
 - [`docs/BROWSER_E2E.md`](docs/BROWSER_E2E.md) — v1.0.0 Chromium E2E、CIRCLE→ARC 修剪及人工驗收
+- [`docs/KEYBOARD_AND_UNITS.md`](docs/KEYBOARD_AND_UNITS.md) — v1.1.0 自訂指令代碼、空白鍵確認、公分精準輸入、瀏覽器快捷鍵保護
 
 ## Cota 獨立可行性測試
 
