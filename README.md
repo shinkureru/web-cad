@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite 的瀏覽器 2D CAD 原型，目標是室內設計施工圖與外出行動編修共用的繪圖核心。
 
-> **v0.9.0 技術原型**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
+> **v1.0.0 技術原型／Chromium 瀏覽器回歸里程碑**：尚未通過施工圖正式驗收；圖面不可直接用於現場放樣或施工定稿。
 
 ## 本機執行
 
@@ -11,6 +11,8 @@ npm install --no-audit --no-fund
 npm run dev
 npm test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
 支援 Node.js 20.19+ 或 22.12+；首次進入可以點右側「載入示範平面圖」。
@@ -20,7 +22,7 @@ npm run build
 - 毫米模型空間、Canvas 畫布、滾輪游標中心縮放、中鍵平移、全圖縮放
 - **W / WALL**：依中心線兩點與可設定牆厚（預設 120 mm）畫出單段封閉的雙線牆輪廓；尚無自動接角／門洞
 - **O / OFFSET**：選取直線、圓、圓弧、矩形或直線段聚合線，指定偏移毫米距離及側邊點；保留來源，可重複偏移。
-- **TR / TRIM**：Shift 多選裁切邊界（線、圓、ARC、矩形、聚合線、基本圖塊），點擊要刪除的直線、開放聚合線或 ARC 區段；保留弧線的真實半徑和角度。
+- **TR / TRIM**：Shift 多選裁切邊界（線、圓、ARC、矩形、聚合線、基本圖塊），點擊要刪除的直線、開放聚合線、ARC 或 CIRCLE 區段；整圓將轉成仍可編輯的原生 ARC，保留真實半徑和角度。
 - **EX / EXTEND**：先選有限邊界（線、圓、ARC、矩形、聚合線、單層圖塊），再點擊欲延伸 LINE 的端點附近，延伸至最近交點。
 - **F / FILLET**：選恰好兩條 LINE，輸入 mm 半徑，修剪端點與產生**原生 ARC 圓角**（可修改半徑與角度，匯出 DXF ARC）。
 - **CHA / CHAMFER**：選兩條 LINE，輸入如 `100,150` 的兩個毫米距離，自動修剪直線並建立倒角連接線。
@@ -42,7 +44,7 @@ npm run build
 - **ASCII DXF 2000 (AC1015) 匯入／匯出**：基本 2D 圖元、圖層、文字、單層圖塊與基本線性／對齊標註；匯入不支援的物件會提示略過數量，使用者確認後才取代工作區
 - **PLOT／Ctrl+P（macOS ⌘P）定比例出圖**：A3/A4、橫／直向、固定 1:20/50/100/200/500、SVG 向量下載、瀏覽器列印／另存 PDF；使用 mm 頁面單位與實體線粗；超出紙張有效區域時禁止裁斷輸出。
 
-支援 Shift 多選、框選與批次編修；**尚未支援** 完整 AutoCAD TRIM／OFFSET（圓切成弧、封閉輪廓等）、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
+支援 Shift 多選、框選與批次編修；**尚未支援** 完整 AutoCAD TRIM／OFFSET（多個圓弧缺口、封閉多邊形與高階選取模式等）、關聯式尺寸標註、BEDIT、巢狀／動態圖塊、DWG、完整 DXF／圖紙空間、完整 Layout、多頁圖紙、CTB/STB 及經施工驗收的 PDF 出圖。螢幕線粗與線型不代表實體出圖規格；本批需在列印對話框設定 100%、無邊界。
 
 ### 操作範例
 
@@ -70,6 +72,12 @@ npm run build
 2. Shift 選兩條垂直的裁切邊界 → `TR` → 點擊橫線中央欲刪除部分，中心被修剪；金色虛線是裁切邊界。
 3. 操作完成按 `Esc`，Ctrl+Z／Ctrl+Y 可逐步復原與重做；不支援的複雜輪廓會提示，不會強制產生錯誤圖元。
 4. 詳細支援／限制：[精準編修與 OFFSET/TRIM 驗收文件](docs/PRECISION_EDITING.md)。
+
+### v1.0.0 瀏覽器 E2E 與完整 CIRCLE 修剪
+
+- **整圓 CIRCLE → ARC**：先 Shift 選擇跨越整圓的切割邊界（至少兩個真實有限交點），輸入 `TR`，點擊圓周上要刪除的區段。整圓自動轉成一條仍保留原中心、半徑、圖層和外觀的真實 ARC。相切或不交會時保持原圖。
+- **Playwright Chromium E2E**：真實畫布滑鼠拖曳框選、Shift 選擇修剪邊界、指令列 LINE/ARC、批次 MOVE、Undo/Redo、JSON/DXF 下載與重新匯入；PR 的 GitHub Actions 自動執行。若需在本機執行，先安裝 Chromium 瀏覽器套件，再執行 `npm run test:e2e`。
+- 此版本是第一個具備真實 Chromium 自動回歸的里程碑，**不表示 Safari／觸控／實體印表或 AutoCAD GUI 已驗證**。詳細測試與操作：[docs/BROWSER_E2E.md](docs/BROWSER_E2E.md)。
 
 ### 原生 ARC／DXF 圓弧（v0.9.0）
 
@@ -111,6 +119,7 @@ npm run build
 - [`docs/PRECISION_EDITING.md`](docs/PRECISION_EDITING.md) — OFFSET／TRIM 精準編修、快捷指令與限制
 - [`docs/ADVANCED_EDITING.md`](docs/ADVANCED_EDITING.md) — EXTEND／FILLET／CHAMFER、框選與多物件操作
 - [`docs/ARC_NATIVE.md`](docs/ARC_NATIVE.md) — v0.9.0 原生 ARC、三點定弧、DXF ARC、修剪及驗收
+- [`docs/BROWSER_E2E.md`](docs/BROWSER_E2E.md) — v1.0.0 Chromium E2E、CIRCLE→ARC 修剪及人工驗收
 
 ## Cota 獨立可行性測試
 
