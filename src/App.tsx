@@ -522,8 +522,8 @@ export default function App() {
     }
     if(annotation){
       if(annotation.kind==='text' && !annotation.text){
-        if(!raw || raw.length>2048){showNotice('文字內容需為 1–2048 字元。');return}
-        setAnnotation({...annotation,text:raw});logMessage('TEXT：請指定文字插入點。')
+        if(!raw || text.length>2048){showNotice('文字內容需為 1–2048 字元。');return}
+        setAnnotation({...annotation,text});logMessage('TEXT：請指定文字插入點。')
         return
       }
       const point=parsePointInput(raw,annotation.points.at(-1)??null,cursor,preferences.inputUnit)
