@@ -1,6 +1,7 @@
 import { expandedDrawing } from './blocks'
 import { dimensionGeometry, entityExtentPoints, getDimensionStyle } from './annotations'
 import { arcExtents, arcPoint, arcSweep } from './arcs'
+import { curveDimensionExtents,curveDimensionPicture } from './curveDimensions'
 import type { CadDisplayEntity, CadDocument, CadLayer, DimensionEntity, Point } from './types'
 
 export type PaperSize = 'A4' | 'A3'
@@ -61,6 +62,7 @@ function entityBounds(entity:CadDisplayEntity,doc:CadDocument):Point[]{
       point(entity.center.x-entity.radius,entity.center.y-entity.radius),
       point(entity.center.x+entity.radius,entity.center.y+entity.radius)]
     case 'text':return entityExtentPoints(entity,getDimensionStyle(doc))
+    case 'curveDimension':return curveDimensionExtents(entity,getDimensionStyle(doc,entity.styleId))
     case 'dimension':{
       const geo=dimensionGeometry(entity,getDimensionStyle(doc,entity.styleId))
       return [...geo.lines.flatMap(line=>[line.a,line.b]),
@@ -161,6 +163,28 @@ export function buildPlot(doc:CadDocument,options:PlotOptions):PlotResult{
     }else if(entity.kind==='text'){
       renderText(entity.text,entity.position,entity.height,entity.rotation,
         {fill:ink.stroke},'start')
+    }else if(entity.kind==='curveDimension'){
+      const picture=curveDimensionPicture(entity,getDimensionStyle(doc,entity.styleId))
+      for(const segment of picture.lines)trace([segment.a,segment.b],false,attrs)
+      for(const arc of picture.arcs){
+        const from=arcPoint({...arc,kind:'arc',id:entity.id,layerId:entity.layerId},0)
+        const end=arcPoint({...arc,kind:'arc',id:entity.id,layerId:entity.layerId},1)
+        const large=arcSweep(arc)>180?1:0
+        lines.push(tag('path',{d:'M '+tx(from.x)+' '+ty(from.y)+
+          ' A '+n(arc.radius/opts.scale)+' '+n(arc.radius/opts.scale)+' 0 '+large+
+          ' 0 '+tx(end.x)+' '+ty(end.y),fill:'none',...attrs}))
+      }
+      for(const triangle of picture.arrowheads){
+        lines.push(tag('polygon',{points:triangle.map(at).join(' '),fill:ink.stroke,stroke:'none'}))
+      }
+      const label=picture.label
+      const textPx=label.height/opts.scale
+      const textWidth=label.text.length*textPx*.75
+      const lx=Number(tx(label.position.x)),ly=Number(ty(label.position.y))
+      lines.push(tag('rect',{x:n(lx-textWidth/2-.7),y:n(ly-textPx*.65),
+        width:n(textWidth+1.4),height:n(textPx*1.3),fill:'white',stroke:'none'}))
+      renderText(label.text,label.position,label.height,label.rotation,
+        {fill:ink.stroke},'middle')
     }else if(entity.kind==='dimension'){
       const dim=entity as DimensionEntity
       const geo=dimensionGeometry(dim,getDimensionStyle(doc,dim.styleId))
