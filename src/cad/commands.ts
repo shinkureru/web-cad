@@ -82,7 +82,36 @@ export function parseLengthInput(raw:string,defaultUnit:InputUnit='mm'):number|n
 }
 const LENGTH='-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:mm|cm|m|毫米|公分|公尺)?'
 const pair=new RegExp('^(@)?('+LENGTH+'),('+LENGTH+')$','i')
-const polar=new RegExp('^@('+LENGTH+')<(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))$','i')
+const polar=new RegExp('^@?('+LENGTH+')<(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))
+
+/** CAD coordinates: X,Y / @DX,DY / @DIST<ANGLE / scalar in cursor direction.
+ * World geometry is always mm; only bare command-line input is configurable.
+ */
+export function parsePointInput(input:string,base:Point|null,cursor:Point,defaultUnit:InputUnit='mm'):Point|null{
+  const value=input.trim().replace(/\s+/g,'')
+  const xy=pair.exec(value)
+  if(xy){
+    const x=parseLengthInput(xy[2],defaultUnit),y=parseLengthInput(xy[3],defaultUnit)
+    if(x===null||y===null||(xy[1]&&!base))return null
+    return roundPoint({x:x+(xy[1]?base!.x:0),y:y+(xy[1]?base!.y:0)})
+  }
+  const polarMatch=polar.exec(value)
+  if(polarMatch&&base){
+    const length=parseLengthInput(polarMatch[1],defaultUnit)
+    if(length===null)return null
+    const angle=Number(polarMatch[2])*Math.PI/180
+    return roundPoint({x:base.x+Math.cos(angle)*length,y:base.y+Math.sin(angle)*length})
+  }
+  if(base){
+    const length=parseLengthInput(value,defaultUnit)
+    if(length!==null){
+      const angle=Math.atan2(cursor.y-base.y,cursor.x-base.x)
+      return roundPoint({x:base.x+Math.cos(angle)*length,y:base.y+Math.sin(angle)*length})
+    }
+  }
+  return null
+}
+,'i')
 
 /** CAD coordinates: X,Y / @DX,DY / @DIST<ANGLE / scalar in cursor direction.
  * World geometry is always mm; only bare command-line input is configurable.
