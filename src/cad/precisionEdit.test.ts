@@ -46,6 +46,7 @@ describe('OFFSET — exact 2D model-space geometry',()=>{
     expect(result.points[0]).toEqual(p(-100,-100))
     expect(result.points[2]).toEqual(p(3100,2100))
     expect(result.points.at(-1)).toEqual(result.points[0])
+    expect(()=>offsetEntity(rect,1500,p(1500,1000))).toThrow('反轉')
   })
   it('rejects zero lengths, impossible inward circles, self-overlaps, locked and unsupported objects',()=>{
     const d=make([line('l',0,0,1000,0)])
