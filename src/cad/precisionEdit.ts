@@ -100,6 +100,15 @@ export function offsetEntity(entity:CadEntity,offset:number,side:Point):CadPrimi
     return {...entity,radius:Number(radius.toFixed(3))}
   }
   if(entity.kind==='rectangle'||entity.kind==='polyline'){
+    if(entity.kind==='rectangle'){
+      const width=Math.abs(entity.end.x-entity.start.x),height=Math.abs(entity.end.y-entity.start.y)
+      if(width<EPS||height<EPS)throw new Error('矩形寬高不可為零。')
+      const minX=Math.min(entity.start.x,entity.end.x),maxX=Math.max(entity.start.x,entity.end.x)
+      const minY=Math.min(entity.start.y,entity.end.y),maxY=Math.max(entity.start.y,entity.end.y)
+      const inside=side.x>minX+EPS&&side.x<maxX-EPS&&side.y>minY+EPS&&side.y<maxY-EPS
+      if(inside && offset*2>=Math.min(width,height)-EPS)
+        throw new Error('矩形向內偏移超過可容納範圍，已取消避免輪廓反轉。')
+    }
     const points:Point[]=entity.kind==='rectangle' ? [
       entity.start,{x:entity.end.x,y:entity.start.y},entity.end,
       {x:entity.start.x,y:entity.end.y},entity.start] : entity.points
