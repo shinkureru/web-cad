@@ -57,7 +57,7 @@ async function dragWorld(page:Page,x1:number,y1:number,x2:number,y2:number){
 }
 test('real command-line LINE creation, Undo/Redo, native JSON download and refresh persistence',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.0.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
   await expect(page.locator('canvas.cad-canvas')).toBeVisible()
   await sendCommand(page,'L')
   await sendCommand(page,'0,0')
@@ -96,7 +96,7 @@ test('actual Canvas drag: L→R enclosed, R→L crossing, batch MOVE and Undo',a
       start:{x:3200,y:1650},end:{x:3600,y:1650}},
   ])
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.0.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
   await dragWorld(page,2100,1400,2700,1700)
   await expect(page.locator('.console-history')).toContainText('框選：1 個')
   await dragWorld(page,2700,1400,2100,1700)
@@ -192,7 +192,7 @@ test('v1.1.0 saves custom command aliases and default cm input across reload',as
   await expect(dialog).toBeVisible()
   await dialog.getByRole('combobox',{name:'指令確認鍵'}).selectOption('space')
   await dialog.getByRole('combobox',{name:'尺寸輸入單位'}).selectOption('cm')
-  await dialog.getByRole('textbox',{name:'自訂指令 line'}).fill('Q')
+  await dialog.getByRole('textbox',{name:'自訂指令 line',exact:true}).fill('Q')
   await dialog.getByRole('button',{name:'儲存設定'}).click()
   await expect(dialog).not.toBeVisible()
   const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
@@ -207,13 +207,13 @@ test('v1.1.0 saves custom command aliases and default cm input across reload',as
   await expect(page.locator('.unit-tag')).toContainText('公分 cm')
   await page.getByRole('button',{name:'鍵盤與單位設定'}).click()
   await expect(page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})
-    .getByRole('textbox',{name:'自訂指令 line'})).toHaveValue('Q')
+    .getByRole('textbox',{name:'自訂指令 line',exact:true})).toHaveValue('Q')
 })
 test('v1.1.0 prevents duplicate command keys and preserves spaces in CAD text annotations',async({page})=>{
   await page.goto('/')
   await page.getByRole('button',{name:'鍵盤與單位設定'}).click()
   const dialog=page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})
-  await dialog.getByRole('textbox',{name:'自訂指令 line'}).fill('TR')
+  await dialog.getByRole('textbox',{name:'自訂指令 line',exact:true}).fill('TR')
   await dialog.getByRole('button',{name:'儲存設定'}).click()
   await expect(dialog.getByRole('alert')).toContainText('已被其他 CAD 指令使用')
   await dialog.getByRole('button',{name:'取消'}).click()
