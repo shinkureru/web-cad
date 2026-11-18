@@ -105,7 +105,7 @@ describe('DXF 2000 interchange',()=>{
     const noUnits=dxf(0,'SECTION',2,'ENTITIES',0,'LINE',8,'0',10,0,20,0,11,1,21,0,0,'ENDSEC',0,'EOF')
     expect(importDxf(noUnits).warnings.some(w=>w.includes('假設'))).toBe(true)
   })
-  it('warns and skips unsupported ARC and splined/bulged entities instead of corrupting them',()=>{
+  it('imports native ARC but still rejects unsupported bulged polylines',()=>{
     const fixture=dxf(0,'SECTION',2,'HEADER',9,'$INSUNITS',70,4,0,'ENDSEC',
       0,'SECTION',2,'ENTITIES',0,'ARC',8,'0',10,0,20,0,40,500,50,0,51,90,
       0,'LWPOLYLINE',8,'0',90,2,70,0,10,0,20,0,42,.414213562,
@@ -113,9 +113,10 @@ describe('DXF 2000 interchange',()=>{
       0,'LINE',8,'0',10,0,20,0,11,1200,21,0,
       0,'ENDSEC',0,'EOF')
     const read=importDxf(fixture)
-    expect(read.imported).toBe(1)
-    expect(read.skipped).toBe(2)
-    expect(read.warnings.some(w=>w.includes('ARC'))).toBe(true)
+    expect(read.imported).toBe(2)
+    expect(read.skipped).toBe(1)
+    expect(read.document.entities.find(e=>e.kind==='arc')).toMatchObject({radius:500,startAngle:0,endAngle:90})
+    expect(read.warnings.some(w=>w.includes('ARC'))).toBe(false)
     expect(read.warnings.some(w=>w.includes('bulge'))).toBe(true)
   })
   it('skips unsupported scaled INSERT references and tells the user',()=>{
