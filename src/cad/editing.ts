@@ -11,6 +11,7 @@ export function translateEntity(entity: CadEntity, offset: Point): CadEntity {
     case 'insert': return { ...entity, position: move(entity.position) }
     case 'text': return { ...entity, position: move(entity.position) }
     case 'dimension': return { ...entity, start: move(entity.start), end: move(entity.end), placement: move(entity.placement) }
+    case 'curveDimension': return {...entity,center:move(entity.center),placement:move(entity.placement)}
   }
 }
 /** Positive angles are counter-clockwise. A rotated rectangle becomes a closed polyline. */
@@ -34,6 +35,9 @@ export function rotateEntity(entity: CadEntity, pivot: Point, degrees: number): 
       endAngle: normalizeAngle(entity.endAngle + degrees) }
     case 'insert': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
     case 'text': return { ...entity, position: spin(entity.position), rotation: entity.rotation + degrees }
+    case 'curveDimension': return {...entity,center:spin(entity.center),placement:spin(entity.placement),
+      ...(entity.startAngle===undefined?{}:{startAngle:normalizeAngle(entity.startAngle+degrees)}),
+      ...(entity.endAngle===undefined?{}:{endAngle:normalizeAngle(entity.endAngle+degrees)})}
     case 'dimension': {
       // A linear horizontal/vertical dimension cannot remain axis-aligned after arbitrary rotation.
       // Convert rotated non-quarter-turn dimensions into aligned dimensions.
