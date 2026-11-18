@@ -468,3 +468,25 @@ test('v1.4.0 ARC angle and length source changes synchronize linked annotations'
   await page.locator('button[title="復原 Ctrl+Z"]').click()
   await expect.poll(async()=>((await saved(page)).entities[2].endAngle as number)).toBe(180)
 })
+
+
+test('v1.4.0 GUI detaches then Shift-pair re-links the exact curve source',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const rim=await canvasWorld(page,2900,1500)
+  await page.mouse.click(rim.x,rim.y)
+  await sendCommand(page,'DRA')
+  await sendCommand(page,'2950,2150')
+  await waitEntities(page,2)
+  await expect(page.getByRole('button',{name:'解除所選尺寸關聯'})).toBeVisible()
+  await page.getByRole('button',{name:'解除所選尺寸關聯'}).click()
+  await expect.poll(async()=>((await saved(page)).entities[1].sourceId)).toBeUndefined()
+  await page.keyboard.down('Shift')
+  await page.mouse.click(rim.x,rim.y)
+  await page.keyboard.up('Shift')
+  await expect(page.getByRole('button',{name:'關聯所選曲線與尺寸標註'})).toBeVisible()
+  await page.getByRole('button',{name:'關聯所選曲線與尺寸標註'}).click()
+  await expect.poll(async()=>((await saved(page)).entities[1].sourceId)).toBe('source-circle')
+  await expect(page.getByRole('region',{name:'曲線標註關聯狀態'})).toContainText('已關聯來源')
+})
