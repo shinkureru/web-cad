@@ -1,0 +1,31 @@
+name: PLOT vector and PDF physical-size smoke test
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/cad/plot.ts'
+      - 'src/cad/plot.test.ts'
+      - 'scripts/validate_plot_pdf.py'
+      - '.github/workflows/plot-interop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-plot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate A3 vector plot at 1:50
+        env:
+          PLOT_SMOKE_FILE: ${{ runner.temp }}/webcad-plot.svg
+        run: npx vitest run src/cad/plot.test.ts
+      - name: Install independent PDF converter and reader
+        run: python -m pip install 'cairosvg>=2.7,<3' 'pypdf>=5,<7'
+      - name: Validate actual PDF page physical size
+        run: python scripts/validate_plot_pdf.py "${{ runner.temp }}/webcad-plot.svg"
