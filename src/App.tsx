@@ -17,6 +17,7 @@ import type { CornerMode } from './cad/advancedEditing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
 import { exportDxf, importDxf } from './cad/dxf'
+import { arcFromThreePoints, arcExtents, arcSweep, normalizeAngle } from './cad/arcs'
 import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
 import type { LibraryPreset } from './cad/blocks'
 import type { CadDocument, CadEntity, Camera, Draft, EditTool, Point, Tool, LineType, DimensionMode, DimensionStyle } from './cad/types'
@@ -39,6 +40,7 @@ const tools: { id: Tool; label: string; alias: string; Icon: typeof Minus }[] = 
   { id: 'polyline', label: '聚合線', alias: 'PL', Icon: PenLine },
   { id: 'rectangle', label: '矩形', alias: 'REC', Icon: Square },
   { id: 'circle', label: '圓形', alias: 'C', Icon: Circle },
+  { id: 'arc', label: '三點圓弧', alias: 'A', Icon: CornerUpRight },
   { id: 'wall', label: '雙線牆', alias: 'W', Icon: Layers3 },
 ]
 
@@ -110,7 +112,7 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.8.0：EX 延伸、F 圓角、CHA 倒角，左右方向框選物件。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.9.0：A / ARC 真實三點圓弧，F / FILLET 原生圓弧，DXF ARC、TRIM 圓弧。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -144,7 +146,7 @@ export default function App() {
   }
   function startBlockCreation() {
     const chosen = doc.entities.filter(e => selectedIds.includes(e.id))
-    if (!chosen.length || chosen.some(e => !['line','polyline','rectangle','circle'].includes(e.kind)
+    if (!chosen.length || chosen.some(e => !['line','polyline','rectangle','circle','arc'].includes(e.kind)
       || !doc.layers.find(l => l.id === e.layerId)?.visible
       || doc.layers.find(l => l.id === e.layerId)?.locked)) {
       showNotice('請 Shift+點選一個或多個未鎖定的基本圖元；目前不支援巢狀圖塊。'); return
@@ -254,7 +256,7 @@ export default function App() {
   function startOffset() {
     const source=doc.entities.find(e=>e.id===selectedId)
     const layer=source&&doc.layers.find(l=>l.id===source.layerId)
-    if(!source||!['line','circle','rectangle','polyline'].includes(source.kind)
+    if(!source||!['line','circle','rectangle','polyline','arc'].includes(source.kind)
       ||!layer?.visible||layer.locked){
       showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
     }
@@ -277,7 +279,7 @@ export default function App() {
     const boundaries=doc.entities.filter(e=>selectedIds.includes(e.id))
     if(!boundaries.length||boundaries.some(e=>{
       const l=doc.layers.find(layer=>layer.id===e.layerId)
-      return !l?.visible||!['line','polyline','rectangle','circle','insert'].includes(e.kind)
+      return !l?.visible||!['line','polyline','rectangle','circle','arc','insert'].includes(e.kind)
     })){
       showNotice('TRIM：請先 Shift+點選一個或多個可見裁切邊界（直線／矩形／圓／聚合線／圖塊）。')
       return
@@ -289,7 +291,7 @@ export default function App() {
   }
   function finishTrim(targetId:string|null,point:Point) {
     if(!trimMode)return
-    if(!targetId){showNotice('請點擊要修剪的直線或開放聚合線。');return}
+    if(!targetId){showNotice('請點擊要修剪的直線、開放聚合線或圓弧。');return}
     try{
       const next=trimDocument(doc,trimMode.boundaryIds,targetId,point,uid)
       editDoc(()=>next);selectSingle(null)
@@ -300,7 +302,7 @@ export default function App() {
     const boundaries=doc.entities.filter(e=>selectedIds.includes(e.id))
     if(!boundaries.length || boundaries.some(e=>{
       const layer=doc.layers.find(l=>l.id===e.layerId)
-      return !layer?.visible||!['line','polyline','rectangle','circle','insert'].includes(e.kind)
+      return !layer?.visible||!['line','polyline','rectangle','circle','arc','insert'].includes(e.kind)
     })){showNotice('EXTEND：請先框選／Shift 多選一個或多個可見延伸邊界。');return}
     setExtendMode({boundaryIds:boundaries.map(e=>e.id)})
     setTrimMode(null);setOffsetMode(null);setCornerMode(null)
@@ -349,7 +351,7 @@ export default function App() {
       if(cornerMode==='fillet')setFilletRadius(a)
       else setChamferDistances([a,b])
       editDoc(()=>result);setCornerMode(null);selectSingle(null)
-      logMessage('已建立'+(cornerMode==='fillet'?'圓角聚合線（細分線段）':'倒角直線')+'，兩條來源線已修剪。')
+      logMessage('已建立'+(cornerMode==='fillet'?'原生 ARC 圓角':'倒角直線')+'，兩條來源線已修剪。')
     }catch(error){showNotice(error instanceof Error?error.message:'角隅編輯無法完成')}
   }
   function startTool(next: Tool) {
@@ -421,6 +423,20 @@ export default function App() {
       logMessage(`聚合線：${points.length} 段，Enter 結束。`)
       return
     }
+    if(tool==='arc'){
+      if(points.length===1){
+        setDraft({tool,points:[...points,p]})
+        logMessage('ARC：已指定弧上一點，請指定終點。')
+        return
+      }
+      try{
+        const arc=arcFromThreePoints(points[0],points[1],p,uid(),layer.id)
+        editDoc(current=>({...current,entities:[...current.entities,arc]}))
+        setDraft(null)
+        logMessage('ARC：已建立真實圓弧（半徑 '+arc.radius+' mm，可修改角度）。')
+      }catch(error){showNotice(error instanceof Error?error.message:'三點無法建立有效圓弧')}
+      return
+    }
     let entity: CadEntity
     if (tool === 'line') entity = { id: uid(), layerId: layer.id, kind: 'line', start: points[0], end: p }
     else if (tool === 'wall') entity = { id: uid(), layerId: layer.id, kind: 'polyline', points: wallOutline(points[0], p, wallThickness) }
@@ -458,6 +474,7 @@ export default function App() {
       if (e.kind === 'line' || e.kind === 'rectangle') p.push(e.start, e.end)
       else if (e.kind === 'polyline') p.push(...e.points)
       else if(e.kind==='circle')p.push({x:e.center.x-e.radius,y:e.center.y-e.radius},{x:e.center.x+e.radius,y:e.center.y+e.radius})
+      else if(e.kind==='arc')p.push(...arcExtents(e))
       else p.push(...entityExtentPoints(e,e.kind==='dimension'?getDimensionStyle(doc,e.styleId):getDimensionStyle(doc)))
     })
     if (!p.length) return
@@ -693,7 +710,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.8.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.9.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -765,8 +782,25 @@ export default function App() {
         <div className="panel-divider"/>
         <div className="panel-section-heading"><span><MousePointer2 size={17}/> 物件資訊</span></div>
         <div className="info-block">{selectedEntity ? <>
-          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', insert: '圖塊參照', text: '文字', dimension: '尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
+          <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', arc: '圓弧', insert: '圖塊參照', text: '文字', dimension: '尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
           <p>ID　{selectedEntity.id.slice(0, 8)}　{selectedLayer?.locked ? '（已鎖定）' : ''}</p>
+          {selectedEntity.kind==='arc' && <div className="annotation-entity-controls">
+            <label>圓弧半徑（mm）<input type="number" aria-label="圓弧半徑" min={0.001} max={1000000000} step={1}
+              value={selectedEntity.radius} disabled={selectedLayer?.locked||!selectedLayer?.visible}
+              onChange={e=>{const v=Number(e.target.value);if(v>=.001&&v<=1e9)updateSelectedEntity({radius:v})}}/></label>
+            <label>起始角度（°）<input type="number" aria-label="圓弧起始角度" step={1}
+              value={selectedEntity.startAngle} disabled={selectedLayer?.locked||!selectedLayer?.visible}
+              onChange={e=>{const v=Number(e.target.value);if(Number.isFinite(v)){
+                const a=normalizeAngle(v)
+                if(arcSweep({startAngle:a,endAngle:selectedEntity.endAngle})>1e-5)updateSelectedEntity({startAngle:a})
+              }}}/></label>
+            <label>結束角度（°）<input type="number" aria-label="圓弧結束角度" step={1}
+              value={selectedEntity.endAngle} disabled={selectedLayer?.locked||!selectedLayer?.visible}
+              onChange={e=>{const v=Number(e.target.value);if(Number.isFinite(v)){
+                const a=normalizeAngle(v)
+                if(arcSweep({startAngle:selectedEntity.startAngle,endAngle:a})>1e-5)updateSelectedEntity({endAngle:a})
+              }}}/></label>
+          </div>}
           {selectedEntity.kind==='text' && <div className="annotation-entity-controls">
             <label>文字內容<textarea aria-label="編輯文字內容" rows={3} value={selectedEntity.text}
               disabled={selectedLayer?.locked || !selectedLayer?.visible} onChange={e=>{
@@ -857,11 +891,13 @@ export default function App() {
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.8.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.9.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
-      ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角使用細分聚合線'],
+      ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
       ['框選', '左→右完全框住才選；右→左碰到即選；Shift 可累積框選，Ctrl+A 選所有可編輯圖元'],
+      ['A / ARC', '三點繪製真實圓弧：起點 → 圓弧經過點 → 終點（世界座標逆時針 CCW）'],
+      ['ARC / TRIM', '選切割邊界（直線、圓或圓弧）→ TR → 點圓弧中要刪除的區段'],
       ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
       ['TR / TRIM', 'Shift+點選一個或多個切割邊界 → TR → 點擊要刪除的直線／開放聚合線部分'],
       ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
