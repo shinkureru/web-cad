@@ -150,6 +150,7 @@ export default function App() {
       showNotice('請 Shift+點選一個或多個未鎖定的基本圖元；目前不支援巢狀圖塊。'); return
     }
     setTool('select'); setDraft(null); setEdit(null); setBlockInsert(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockCreate({ ids: chosen.map(e => e.id), name: null })
     logMessage('BLOCK：請輸入圖塊名稱，再指定基準點（mm）。')
     inputRef.current?.focus()
@@ -170,6 +171,7 @@ export default function App() {
     if (!block) { showNotice('請先從預設圖塊庫加入圖塊，或使用 B 建立圖塊。'); return }
     if (!layer?.visible || layer.locked) { showNotice('請切換到顯示且未鎖定的圖層。'); return }
     setActiveBlockId(block.id); setTool('select'); setEdit(null); setDraft(null); setBlockCreate(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockInsert({ blockId: block.id }); logMessage(`INSERT：指定「${block.name}」的插入點（mm）。`)
     inputRef.current?.focus()
   }
@@ -178,6 +180,7 @@ export default function App() {
     if (!layer?.visible || layer.locked) { showNotice('請先切換到可編輯圖層。'); return }
     editDoc(current => installPreset(current, preset))
     setActiveBlockId(preset.id); setTool('select'); setDraft(null); setEdit(null); setBlockCreate(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setAnnotation(null);setBlockInsert({ blockId: preset.id }); logMessage(`插入預設「${preset.name}」：指定插入點。`)
     inputRef.current?.focus()
   }
@@ -205,6 +208,7 @@ export default function App() {
     const layer=doc.layers.find(l=>l.id===doc.activeLayerId)
     if(!layer?.visible || layer.locked){showNotice('目前圖層已隱藏或鎖定，無法標註。');return}
     setAnnotation({kind,text:'',points:[]})
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setTool('select');setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null);selectSingle(null)
     logMessage(kind==='text'?'TEXT：請輸入文字內容，Enter 後指定插入點。':'DIM：請指定第一個延伸線起點。')
     inputRef.current?.focus()
@@ -254,7 +258,7 @@ export default function App() {
       ||!layer?.visible||layer.locked){
       showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
     }
-    setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null)
+    setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
     setTool('select')
     logMessage('OFFSET：輸入偏移距離（mm），按 Enter；再點選要偏移的一側。')
@@ -279,7 +283,7 @@ export default function App() {
       return
     }
     setTrimMode({boundaryIds:boundaries.map(e=>e.id)})
-    setOffsetMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+    setOffsetMode(null);setExtendMode(null);setCornerMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
     setAnnotation(null);setDraft(null);setTool('select');selectSingle(null)
     logMessage('TRIM：在畫布上點選要移除的線段部分；裁切邊界保持不變。按 Esc 結束。')
   }
