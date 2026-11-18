@@ -3,12 +3,15 @@ import {
   ArrowDownToLine, Box, Circle, Command, CornerDownLeft, Type, PencilRuler, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
   HelpCircle, Layers3, LockKeyhole, Minus, MousePointer2, PanelRightClose, PanelRightOpen,
   PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer, Scissors, CornerUpRight, GitMerge,
-  UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut,
+  UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut, Settings2,
 } from 'lucide-react'
 import CadCanvas from './components/CadCanvas'
 import PlotDialog from './components/PlotDialog'
-import { findCommand, parsePointInput } from './cad/commands'
+import CadSettingsDialog from './components/CadSettingsDialog'
+import { findCommand, parseLengthInput, parsePointInput, unitToMm } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
+import { canRedirectPlainKey, loadPreferences, PREF_STORAGE_KEY, shouldSubmitCommandKey, shouldSubmitInCommandInput } from './cad/preferences'
+import type { CadPreferences } from './cad/preferences'
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
 import { offsetDocument, trimDocument } from './cad/precisionEdit'
@@ -112,7 +115,9 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v1.0.0：TRIM 可將 CIRCLE 修剪為真正 ARC；Chromium 瀏覽器操作自動驗收。'])
+  const [preferences, setPreferences] = useState<CadPreferences>(loadPreferences)
+  const [settingsOpen,setSettingsOpen]=useState(false)
+  const [log, setLog] = useState<string[]>(['Web CAD v1.1.0：空白鍵可確認指令；支援自訂快捷代碼及 cm/mm 精準輸入。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -125,6 +130,7 @@ export default function App() {
   const logMessage = useCallback((message: string) => setLog(old => [...old.slice(-4), message]), [])
   function showNotice(message: string) { setNotice(message); logMessage(message) }
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(doc)) } catch { /* storage disabled */ } }, [doc])
+  useEffect(() => { try { localStorage.setItem(PREF_STORAGE_KEY, JSON.stringify(preferences)) } catch { /* storage disabled */ } }, [preferences])
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 3400)
@@ -258,12 +264,12 @@ export default function App() {
     const layer=source&&doc.layers.find(l=>l.id===source.layerId)
     if(!source||!['line','circle','rectangle','polyline','arc'].includes(source.kind)
       ||!layer?.visible||layer.locked){
-      showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
+      showNotice('OFFSET：請先選取未鎖定的直線、圓、圓弧、矩形或聚合線。');return
     }
     setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
     setTool('select')
-    logMessage('OFFSET：輸入偏移距離（mm），按 Enter；再點選要偏移的一側。')
+    logMessage('OFFSET：輸入偏移距離（目前預設 '+preferences.inputUnit+'，可加 cm/mm 後綴），按空白鍵或 Enter；再點選偏移側。')
     inputRef.current?.focus()
   }
   function finishOffset(side:Point) {
@@ -330,19 +336,17 @@ export default function App() {
     setCornerMode(mode);setExtendMode(null);setOffsetMode(null);setTrimMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null);setTool('select')
     logMessage(mode==='fillet'
-      ?'FILLET：輸入半徑 mm（0 代表直角接合）；Enter 套用兩線圓角。'
-      :'CHAMFER：輸入兩側倒角距離「100,150」（或單值 100）；Enter 套用。')
+      ?'FILLET：輸入半徑（預設 '+preferences.inputUnit+'，亦可加 cm/mm；0 為尖角），按確認鍵套用。'
+      :'CHAMFER：輸入兩側倒角距離（預設 '+preferences.inputUnit+'），如 10cm,15cm；按確認鍵套用。')
     inputRef.current?.focus()
   }
   function finishCorner(raw:string) {
     if(!cornerMode)return
-    const v=raw.trim()
-    const matches=cornerMode==='fillet'
-      ? /^([0-9]+(?:\.[0-9]+)?)$/.exec(v)
-      : /^([0-9]+(?:\.[0-9]+)?)(?:\s*,\s*([0-9]+(?:\.[0-9]+)?))?$/.exec(v)
-    const a=matches?Number(matches[1]):NaN
-    const b=cornerMode==='fillet'?a:Number(matches?.[2]??matches?.[1])
-    if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<0||a>1e6||b>1e6){
+    const values=raw.trim().split(',').map(t=>t.trim())
+    const a=values.length>0&&values.length<3?parseLengthInput(values[0],preferences.inputUnit):null
+    const b=cornerMode==='fillet'?a:
+      values.length===1?a:values.length===2?parseLengthInput(values[1],preferences.inputUnit):null
+    if(a===null||b===null||a<0||b<0||a>1e6||b>1e6){
       showNotice('請輸入有效的非負半徑／倒角距離（最多 1,000,000 mm）。');return
     }
     try{
@@ -487,46 +491,48 @@ export default function App() {
   const runCommand = (text: string) => {
     const raw = text.trim()
     if(cornerMode){
-      if(findCommand(raw)==='cancel'){setCornerMode(null);return}
-      finishCorner(raw||String(cornerMode==='fillet'?filletRadius:chamferDistances.join(',')))
+      if(findCommand(raw,preferences.shortcuts)==='cancel'){setCornerMode(null);return}
+      finishCorner(raw||(cornerMode==='fillet'
+        ?filletRadius+'mm':chamferDistances.map(v=>v+'mm').join(',')))
       return
     }
     if(extendMode){
-      if(!raw||findCommand(raw)==='cancel'){setExtendMode(null);logMessage('已結束 EXTEND。');return}
+      if(!raw||findCommand(raw,preferences.shortcuts)==='cancel'){setExtendMode(null);logMessage('已結束 EXTEND。');return}
       showNotice('EXTEND：請在畫布點擊直線欲延伸的端點附近；Esc 結束。');return
     }
     if(offsetMode){
-      if(findCommand(raw)==='cancel'){setOffsetMode(null);logMessage('已結束 OFFSET。');return}
-      if(offsetMode.distance===null||(/^\d+(?:\.\d+)?$/.test(raw) && Number(raw)>0)){
-        const amount=Number(raw)
-        if(!Number.isFinite(amount)||amount<=0||amount>1000000){
+      if(findCommand(raw,preferences.shortcuts)==='cancel'){setOffsetMode(null);logMessage('已結束 OFFSET。');return}
+      const parsedDistance=parseLengthInput(raw,preferences.inputUnit)
+      if(offsetMode.distance===null||(parsedDistance!==null && parsedDistance>0)){
+        const amount=parsedDistance
+        if(amount===null||amount<=0||amount>1000000){
           showNotice('OFFSET 距離請輸入 0–1,000,000 mm 之間的正數。');return
         }
         setOffsetMode({...offsetMode,distance:amount})
         logMessage('OFFSET '+amount+' mm：點擊來源物件的偏移側，可多次偏移；Esc 結束。')
         return
       }
-      const side=parsePointInput(raw,null,cursor)
+      const side=parsePointInput(raw,null,cursor,preferences.inputUnit)
       if(side){finishOffset(side);return}
       showNotice('請輸入有效的偏移距離或側邊絕對座標 X,Y；Esc 結束。');return
     }
     if(trimMode){
-      if(!raw||findCommand(raw)==='cancel'){setTrimMode(null);logMessage('已結束 TRIM。');return}
+      if(!raw||findCommand(raw,preferences.shortcuts)==='cancel'){setTrimMode(null);logMessage('已結束 TRIM。');return}
       showNotice('TRIM 請在畫布上點擊要移除的線段部分；按 Esc 結束。');return
     }
     if(annotation){
       if(annotation.kind==='text' && !annotation.text){
-        if(!raw || raw.length>2048){showNotice('文字內容需為 1–2048 字元。');return}
-        setAnnotation({...annotation,text:raw});logMessage('TEXT：請指定文字插入點。')
+        if(!raw || text.length>2048){showNotice('文字內容需為 1–2048 字元。');return}
+        setAnnotation({...annotation,text});logMessage('TEXT：請指定文字插入點。')
         return
       }
-      const point=parsePointInput(raw,annotation.points.at(-1)??null,cursor)
+      const point=parsePointInput(raw,annotation.points.at(-1)??null,cursor,preferences.inputUnit)
       if(point){annotationPoint(point);return}
-      if(findCommand(raw)==='cancel'){setAnnotation(null);return}
+      if(findCommand(raw,preferences.shortcuts)==='cancel'){setAnnotation(null);return}
       showNotice('請輸入有效座標，例如 3000,1500 或 @3000,0。');return
     }
     if (blockCreate) {
-      if (findCommand(raw) === 'cancel') { setBlockCreate(null); return }
+      if (findCommand(raw,preferences.shortcuts) === 'cancel') { setBlockCreate(null); return }
       if (!blockCreate.name) {
         if (!raw || raw.length > 60 || (doc.blocks ?? []).some(b => b.name.toLowerCase() === raw.toLowerCase())) {
           showNotice('請輸入 1–60 字、不與現有圖塊重複的名稱。'); return
@@ -534,22 +540,22 @@ export default function App() {
         setBlockCreate({ ...blockCreate, name: raw }); logMessage('指定圖塊基準點：滑鼠點選或輸入 X,Y。')
         return
       }
-      const point = parsePointInput(raw, null, cursor)
+      const point = parsePointInput(raw, null, cursor,preferences.inputUnit)
       if (point) { finishBlockCreation(point); return }
       showNotice('請輸入有效的絕對座標，例如 0,0，或在畫布上點選。'); return
     }
     if (blockInsert) {
-      if (findCommand(raw) === 'cancel') { setBlockInsert(null); return }
-      const point = parsePointInput(raw, null, cursor)
+      if (findCommand(raw,preferences.shortcuts) === 'cancel') { setBlockInsert(null); return }
+      const point = parsePointInput(raw, null, cursor,preferences.inputUnit)
       if (point) { finishInsert(point); return }
       showNotice('請輸入絕對座標 X,Y 或在畫布上點選插入點。'); return
     }
     if (edit) {
       if (!raw) { showNotice('請指定基準點、下一點或旋轉角度。'); return }
       if (edit.base && edit.kind === 'rotate' && /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) { finishEdit(edit.base, Number(raw)); return }
-      const point = parsePointInput(raw, edit.base, cursor)
+      const point = parsePointInput(raw, edit.base, cursor,preferences.inputUnit)
       if (point) { finishEdit(point); return }
-      if (findCommand(raw) === 'cancel') { setEdit(null); return }
+      if (findCommand(raw,preferences.shortcuts) === 'cancel') { setEdit(null); return }
       showNotice(`請輸入有效的座標${edit.kind === 'rotate' ? '或角度' : ''}。`); return
     }
     if (!raw) {
@@ -558,9 +564,9 @@ export default function App() {
       else startTool(lastTool.current)
       return
     }
-    const coordinate = parsePointInput(raw, draft?.points.at(-1) ?? null, cursor)
+    const coordinate = parsePointInput(raw, draft?.points.at(-1) ?? null, cursor,preferences.inputUnit)
     if (coordinate && tool !== 'select') { addPoint(coordinate); return }
-    const command = findCommand(raw)
+    const command = findCommand(raw,preferences.shortcuts)
     if (!command) { showNotice(`未知指令／座標：${raw}`); return }
     switch (command) {
       case 'undo': dispatch({ type: 'undo' }); setDraft(null); selectSingle(null); return
@@ -588,39 +594,62 @@ export default function App() {
   }
   function handleCommandSubmit() { runCommand(commandText); setCommandText('') }
   useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      const target = ev.target as HTMLElement | null
-      const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
-      if (ev.isComposing) return
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a' && !editing) {
+    const onKey=(ev:KeyboardEvent)=>{
+      const target=ev.target as HTMLElement|null
+      if(settingsOpen||helpOpen||plotOpen||ev.isComposing||ev.key==='Process'||ev.keyCode===229)return
+      const editing=!!target&&(target.isContentEditable||
+        ['INPUT','TEXTAREA','SELECT'].includes(target.tagName))
+      const commandInput=target===inputRef.current
+      const canvasFocused=target?.matches('canvas.cad-canvas')??false
+      const cadFocused=canvasFocused||target===document.body
+      // Explicitly preserve browser Ctrl/Cmd+P/L/T/W/R/S/F and text-input undo.
+      if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&cadFocused&&!ev.repeat){
+        const key=ev.key.toLowerCase()
+        if(key==='a'){
+          ev.preventDefault()
+          const ids=doc.entities.filter(e=>{
+            const l=doc.layers.find(layer=>layer.id===e.layerId)
+            return l?.visible&&!l.locked
+          }).map(e=>e.id)
+          setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
+          logMessage('已選取 '+ids.length+' 個可編輯物件。')
+          return
+        }
+        if(key==='z'){
+          ev.preventDefault();dispatch({type:ev.shiftKey?'redo':'undo'});setDraft(null);return
+        }
+        if(key==='y'){
+          ev.preventDefault();dispatch({type:'redo'});setDraft(null);return
+        }
+      }
+      if(ev.key==='Escape'&&(cadFocused||commandInput)&&!ev.repeat){
         ev.preventDefault()
-        const ids=doc.entities.filter(e=>{
-          const l=doc.layers.find(layer=>layer.id===e.layerId)
-          return l?.visible && !l.locked
-        }).map(e=>e.id)
-        setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
-        logMessage('已選取 '+ids.length+' 個可編輯物件。')
+        setDraft(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+        setAnnotation(null);setOffsetMode(null);setTrimMode(null);setExtendMode(null)
+        setCornerMode(null);setTool('select');selectSingle(null)
+        logMessage('已取消操作.')
         return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') {
-        ev.preventDefault(); setPlotOpen(true); return
+      if(canvasFocused&&(ev.key==='F3'||ev.key==='F8')){
+        ev.preventDefault()
+        if(ev.key==='F3')setOsnap(old=>!old)
+        else setOrtho(old=>!old)
+        return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
-        ev.preventDefault(); dispatch({ type: ev.shiftKey ? 'redo' : 'undo' }); setDraft(null); return
+      if(cadFocused&&shouldSubmitCommandKey(ev.key,preferences.confirmKey)&&
+        !ev.ctrlKey&&!ev.metaKey&&!ev.altKey&&!ev.shiftKey&&!ev.repeat){
+        ev.preventDefault();handleCommandSubmit();return
       }
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') {
-        ev.preventDefault(); dispatch({ type: 'redo' }); setDraft(null); return
-      }
-      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null);setExtendMode(null);setCornerMode(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
-      if (ev.key === 'F3') { ev.preventDefault(); setOsnap(old => !old); return }
-      if (ev.key === 'F8') { ev.preventDefault(); setOrtho(old => !old); return }
-      if (!editing && ev.key === 'Delete') { ev.preventDefault(); deleteSelected(); return }
-      if (!editing && ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
-        ev.preventDefault(); setCommandText(t => t + ev.key); inputRef.current?.focus()
+      if(cadFocused&&canRedirectPlainKey({
+        key:ev.key,ctrlKey:ev.ctrlKey,metaKey:ev.metaKey,altKey:ev.altKey,
+        isComposing:ev.isComposing,editing,dialogOpen:false,repeat:ev.repeat
+      })){
+        ev.preventDefault()
+        setCommandText(t=>t+ev.key);inputRef.current?.focus()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown',onKey)
+    return ()=>window.removeEventListener('keydown',onKey)
   })
 
   function exportDrawingDxf() {
@@ -685,16 +714,16 @@ export default function App() {
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
   const title = cornerMode
-    ? cornerMode==='fillet'?'圓角半徑 mm（預設 '+filletRadius+'）'
-      :'倒角距離 mm（預設 '+chamferDistances.join(',')+'）'
+    ? cornerMode==='fillet'?'圓角半徑 '+preferences.inputUnit+'（預設 '+(filletRadius/unitToMm(preferences.inputUnit))+'）'
+      :'倒角距離 '+preferences.inputUnit+'（預設 '+chamferDistances.map(v=>v/unitToMm(preferences.inputUnit)).join(',')+'）'
     : extendMode?'點選直線欲延伸的端點，Esc 結束'
     : offsetMode
-    ? offsetMode.distance===null?'輸入偏移距離（mm）':'點選偏移側或輸入 X,Y；Esc 結束'
-    : trimMode?'點選要修剪的線段；Esc 結束'
+    ? offsetMode.distance===null?'輸入偏移距離（'+preferences.inputUnit+'；可輸入 30cm）':'點選偏移側或輸入 X,Y；Esc 結束'
+    : trimMode?'點選線段、圓弧或整圓；Esc 結束'
     : annotation
     ? annotation.kind==='text' ? (annotation.text?'指定文字插入點（X,Y）':'輸入要插入的繁體中文文字')
     : ['指定第一個標註點','指定第二個標註點','指定標註線位置'][annotation.points.length]
-    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按 Enter' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，按 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C）'
+    : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按確認鍵' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，空白鍵或 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C），空白鍵確認'
 
   return <div className="app">
     <header className="app-header">
@@ -702,15 +731,16 @@ export default function App() {
       <div className="header-divider"/>
       <div className="document-name"><span className="doc-prefix">目前圖面 / </span><input aria-label="圖面名稱" value={doc.name} onChange={e => editDoc(d => ({...d, name: e.target.value}))}/><span className="unsaved-tag">本機自動儲存</span></div>
       <div className="header-actions">
+        <button title="鍵盤與單位設定" aria-label="鍵盤與單位設定" onClick={() => setSettingsOpen(true)}><Settings2 size={16}/><span>設定</span></button>
         <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
         <button title="開啟 JSON / DXF 檔案" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
-        <button title="PLOT / Ctrl+P — 按毫米定比例出圖" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
+        <button title="PLOT 指令 — 按毫米定比例出圖（Ctrl／Command+P 為瀏覽器列印）" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
         <button title="將圖面匯出 ASCII DXF 2000" onClick={exportDrawingDxf}><ArrowDownToLine size={16}/><span>匯出 DXF</span></button>
         <button className="header-primary" title="匯出原生 JSON 主檔" onClick={() => downloadDocument(doc)}><Save size={16}/><span>備份 JSON</span></button>
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.0.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.1.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -740,8 +770,12 @@ export default function App() {
           <div className="toolbar-set"><button title="復原 Ctrl+Z" disabled={!history.past.length} onClick={() => dispatch({ type: 'undo' })}><Undo2 size={16}/></button><button title="重做 Ctrl+Y" disabled={!history.future.length} onClick={() => dispatch({ type: 'redo' })}><Redo2 size={16}/></button></div>
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button className={grid ? 'pressed' : ''} title="顯示格線" onClick={() => setGrid(!grid)}><Grid3X3 size={16}/> 格線</button><button className={osnap ? 'pressed' : ''} title="物件鎖點 F3" onClick={() => setOsnap(!osnap)}><Scan size={16}/> 鎖點</button><button className={ortho ? 'pressed' : ''} title="正交 F8" onClick={() => setOrtho(!ortho)}><CornerDownLeft size={16}/> 正交</button></div>
-          {tool === 'wall' && <label className="wall-thickness">牆厚 <input aria-label="牆厚（mm）" type="number" value={wallThickness} min={1} max={2000} step={10}
-            onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1 && n <= 2000) setWallThickness(n) }}/><span>mm</span></label>}
+          {tool === 'wall' && <label className="wall-thickness">牆厚 <input aria-label={'牆厚（'+preferences.inputUnit+'）'} type="number"
+            value={wallThickness/unitToMm(preferences.inputUnit)}
+            min={1/unitToMm(preferences.inputUnit)} max={2000/unitToMm(preferences.inputUnit)}
+            step={preferences.inputUnit==='cm'?.1:1}
+            onChange={e=>{const n=Number(e.target.value)*unitToMm(preferences.inputUnit);
+              if(Number.isFinite(n)&&n>=1&&n<=2000)setWallThickness(Math.round(n*1000)/1000)}}/><span>{preferences.inputUnit}</span></label>}
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button title="放大" onClick={() => setCamera(c => ({ ...c, scale: Math.min(40, c.scale * 1.3) }))}><ZoomIn size={17}/></button><button title="縮小" onClick={() => setCamera(c => ({ ...c, scale: Math.max(.004, c.scale / 1.3) }))}><ZoomOut size={17}/></button><button title="縮放至圖面範圍" onClick={fitView}><Scan size={16}/> 全圖</button></div>
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
@@ -757,7 +791,15 @@ export default function App() {
         </div>
         <section className="command-area" aria-label="CAD 指令列">
           <div className="console-history">{log.slice(-2).map((message, i) => <div key={`${i}-${message}`}>{message}</div>)}</div>
-          <div className="console-entry"><span className="prompt-icon"><Command size={16}/></span><span className="prompt-label">命令:</span><input ref={inputRef} aria-label="CAD 指令輸入" spellCheck={false} autoComplete="off" placeholder={title} value={commandText} onChange={e => setCommandText(e.target.value)} onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); handleCommandSubmit() } }} /><button title="執行指令" onClick={handleCommandSubmit}><CornerDownLeft size={16}/></button></div>
+          <div className="console-entry"><span className="prompt-icon"><Command size={16}/></span><span className="prompt-label">命令:</span><input ref={inputRef} aria-label="CAD 指令輸入" spellCheck={false} autoComplete="off" placeholder={title} value={commandText} onChange={e => setCommandText(e.target.value)} onKeyDown={e=>{
+            if(shouldSubmitInCommandInput(e.key,preferences.confirmKey,{
+              isComposing:e.nativeEvent.isComposing||e.nativeEvent.keyCode===229,
+              ctrlKey:e.ctrlKey,metaKey:e.metaKey,altKey:e.altKey,repeat:e.repeat,
+              freeText:(annotation?.kind==='text'&&!annotation.text)||(!!blockCreate&&!blockCreate.name)
+            })){
+              e.preventDefault();e.stopPropagation();handleCommandSubmit()
+            }
+          }} /><button title="執行指令" onClick={handleCommandSubmit}><CornerDownLeft size={16}/></button></div>
         </section>
       </section>
       {panelOpen && <aside className="property-panel">
@@ -882,16 +924,21 @@ export default function App() {
           </select></label>
           <label>單位後綴（可留空）<input aria-label="尺寸單位後綴" maxLength={16}
             value={getDimensionStyle(doc).suffix} onChange={e=>updateDimensionStyle({suffix:e.target.value})}/></label>
-          <label>新增文字高度（mm）<input type="number" min={1} max={10000} value={newTextHeight}
-            onChange={e=>{const n=Number(e.target.value);if(n>0&&n<=10000)setNewTextHeight(n)}}/></label>
+          <label>新增文字高度（{preferences.inputUnit}）<input type="number"
+            min={1/unitToMm(preferences.inputUnit)} max={10000/unitToMm(preferences.inputUnit)}
+            step={preferences.inputUnit==='cm'?.1:1}
+            value={newTextHeight/unitToMm(preferences.inputUnit)}
+            onChange={e=>{const n=Number(e.target.value)*unitToMm(preferences.inputUnit);
+              if(n>0&&n<=10000)setNewTextHeight(Math.round(n*1000)/1000)}}/></label>
           <p>標註尺寸由幾何座標計算，標註樣式變更會套用至共用此樣式的尺寸。</p>
         </div>
         <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setAnnotation(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
       </aside>}
     </div>
-    <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
-    {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.0.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {(cursor.x/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)} <span className="status-sep">·</span> Y {(cursor.y/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">輸入 {preferences.inputUnit==='cm'?'公分 cm':'毫米 mm'} ／ 模型 mm</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
+    {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>} 
+    {settingsOpen && <CadSettingsDialog preferences={preferences} onApply={setPreferences} onClose={() => setSettingsOpen(false)}/>}
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.1.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
@@ -900,7 +947,7 @@ export default function App() {
       ['ARC / TRIM', '選切割邊界（直線、圓或圓弧）→ TR → 點圓弧中要刪除的區段'],
       ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
       ['TR / TRIM', 'Shift 選切割邊界 → TR → 點擊直線／開放 PL／ARC／CIRCLE 待刪區段；整圓剩餘為原生 ARC'],
-      ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
+      ['PLOT', '開啟定比例列印；瀏覽器 Ctrl／Command+P 保留原生列印快捷鍵'],
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],

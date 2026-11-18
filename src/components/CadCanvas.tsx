@@ -358,6 +358,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     setHover(point);onCursorChange(point)
   }
   function handlePointerDown(ev:React.PointerEvent<HTMLCanvasElement>){
+    ev.currentTarget.focus({preventScroll:true})
     const screen=localPosition(ev)
     if(ev.button===1||(ev.button===0&&ev.altKey)){
       drag.current={pointerId:ev.pointerId,at:screen,cam:camera}
@@ -391,7 +392,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     }else onSelect(pickAt(end),selection.shift)
   }
   return <div className="drawing-surface" ref={hostRef}>
-    <canvas ref={canvasRef} className="cad-canvas" aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : selectionBox?'crosshair':'crosshair' }}
+    <canvas ref={canvasRef} className="cad-canvas" tabIndex={0} aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : selectionBox?'crosshair':'crosshair' }}
       onPointerMove={handlePointerMove} onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={() => { drag.current = null;selectionRef.current=null;setSelectionBox(null) }}

@@ -57,7 +57,7 @@ async function dragWorld(page:Page,x1:number,y1:number,x2:number,y2:number){
 }
 test('real command-line LINE creation, Undo/Redo, native JSON download and refresh persistence',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.0.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
   await expect(page.locator('canvas.cad-canvas')).toBeVisible()
   await sendCommand(page,'L')
   await sendCommand(page,'0,0')
@@ -96,7 +96,7 @@ test('actual Canvas drag: L→R enclosed, R→L crossing, batch MOVE and Undo',a
       start:{x:3200,y:1650},end:{x:3600,y:1650}},
   ])
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.0.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
   await dragWorld(page,2100,1400,2700,1700)
   await expect(page.locator('.console-history')).toContainText('框選：1 個')
   await dragWorld(page,2700,1400,2100,1700)
@@ -167,4 +167,92 @@ test('ARC created from three command points survives JSON storage and SVG plot U
   })
   await page.getByRole('button',{name:/比例出圖/}).first().click()
   await expect(page.locator('body')).toContainText('A3')
+})
+
+
+test('v1.1.0 accepts Space as CAD confirmation and exact explicit centimetres',async({page})=>{
+  await page.goto('/')
+  await expect(page.locator('.menu-bar')).toContainText('v1.1.0')
+  const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
+  await input.fill('L')
+  await input.press('Space')
+  await input.fill('0,0')
+  await input.press('Space')
+  await input.fill('12.34cm,0cm')
+  await input.press('Space')
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'line',start:{x:0,y:0},end:{x:123.4,y:0}
+  })
+})
+test('v1.1.0 saves custom command aliases and default cm input across reload',async({page})=>{
+  await page.goto('/')
+  await page.getByRole('button',{name:'鍵盤與單位設定'}).click()
+  const dialog=page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('combobox',{name:'指令確認鍵'}).selectOption('space')
+  await dialog.getByRole('combobox',{name:'尺寸輸入單位'}).selectOption('cm')
+  await dialog.getByRole('textbox',{name:'自訂指令 line',exact:true}).fill('Q')
+  await dialog.getByRole('button',{name:'儲存設定'}).click()
+  await expect(dialog).not.toBeVisible()
+  const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
+  await input.fill('Q');await input.press('Space')
+  await input.fill('0,0');await input.press('Space')
+  await input.fill('125.5,0');await input.press('Space')
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'line',end:{x:1255,y:0}
+  })
+  await page.reload()
+  await expect(page.locator('.unit-tag')).toContainText('公分 cm')
+  await page.getByRole('button',{name:'鍵盤與單位設定'}).click()
+  await expect(page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})
+    .getByRole('textbox',{name:'自訂指令 line',exact:true})).toHaveValue('Q')
+})
+test('v1.1.0 prevents duplicate command keys and preserves spaces in CAD text annotations',async({page})=>{
+  await page.goto('/')
+  await page.getByRole('button',{name:'鍵盤與單位設定'}).click()
+  const dialog=page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})
+  await dialog.getByRole('textbox',{name:'自訂指令 line',exact:true}).fill('TR')
+  await dialog.getByRole('button',{name:'儲存設定'}).click()
+  await expect(dialog.getByRole('alert')).toContainText('已被其他 CAD 指令使用')
+  await dialog.getByRole('button',{name:'取消'}).click()
+  const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
+  await input.fill('T');await input.press('Space')
+  await input.fill('客廳 A')
+  await input.press('Space')
+  await expect(input).toHaveValue('客廳 A ')
+  await input.press('Enter')
+  await expect(page.locator('.console-history')).toContainText('文字插入點')
+  await input.fill('30cm,20cm');await input.press('Space')
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'text',position:{x:300,y:200},text:'客廳 A '
+  })
+})
+test('v1.1.0 preserves browser/system chords and native editing of ordinary inputs',async({page})=>{
+  await page.goto('/')
+  const title=page.getByRole('textbox',{name:'圖面名稱'})
+  await title.fill('鍵盤回歸')
+  await title.press('ControlOrMeta+A')
+  await title.press('Backspace')
+  await title.fill('保留瀏覽器功能')
+  await expect(title).toHaveValue('保留瀏覽器功能')
+  const intercepted=await page.evaluate(()=>{
+    const canvas=document.querySelector('canvas.cad-canvas')!
+    const keys=['p','l','s','t','w','r','f']
+    return keys.map(key=>{
+      const evt=new KeyboardEvent('keydown',{
+        key,ctrlKey:true,bubbles:true,cancelable:true
+      })
+      canvas.dispatchEvent(evt)
+      return {key,canceled:evt.defaultPrevented}
+    })
+  })
+  expect(intercepted).toEqual(['p','l','s','t','w','r','f']
+    .map(key=>({key,canceled:false})))
+  // Plain Space on a focused button is not interpreted as a CAD command.
+  await page.getByRole('button',{name:'鍵盤與單位設定'}).focus()
+  await page.keyboard.press('Space')
+  await expect(page.getByRole('dialog',{name:'CAD 鍵盤與單位設定'})).toBeVisible()
 })
