@@ -66,8 +66,8 @@ export function shouldSubmitCommandKey(key:string,setting:ConfirmKey):boolean{
 export function shouldSubmitInCommandInput(key:string,setting:ConfirmKey,
   options:{isComposing:boolean;ctrlKey:boolean;metaKey:boolean;altKey:boolean;
     freeText:boolean;repeat?:boolean}):boolean{
-  if(options.isComposing||options.ctrlKey||options.metaKey||options.altKey||
-    options.repeat||options.freeText&&key===' ')return false
+  if(options.isComposing||options.ctrlKey||options.metaKey||options.altKey||options.repeat)return false
+  if(options.freeText) return key==='Enter' // text and block names need literal spaces
   return shouldSubmitCommandKey(key,setting)
 }
 
