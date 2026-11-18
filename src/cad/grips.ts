@@ -67,8 +67,8 @@ export function moveGrip(entity:CadEntity,gripId:string,raw:Point):CadEntity{
     case 'polyline':{
       const index=Number(gripId.slice(6))
       const points=entity.points.map(p=>({...p}))
-      points[index]=target
       const closed=points.length>=4&&distance(points[0],points.at(-1)!)<.001
+      points[index]=target
       if(closed&&(index===0||index===points.length-1)){
         points[0]=target;points[points.length-1]=target
       }
