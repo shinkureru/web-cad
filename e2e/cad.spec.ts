@@ -76,6 +76,13 @@ test('real command-line LINE creation, Undo/Redo, native JSON download and refre
   expect(download.suggestedFilename()).toMatch(/\.webcad\.json$/)
   const json=JSON.parse(await readFile(await download.path()!,'utf8'))
   expect(json.entities[0]).toMatchObject({kind:'line',end:{x:1000,y:0}})
+  json.name='E2E JSON 回復'
+  page.once('dialog',dialog=>{void dialog.accept()})
+  await page.locator('input[type="file"]').setInputFiles({
+    name:'restore.webcad.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify(json),'utf8')
+  })
+  await expect.poll(async()=> (await saved(page) as {name:string}).name).toBe('E2E JSON 回復')
   await page.reload()
   await expect.poll(async()=> (await saved(page)).entities.length).toBe(1)
 })
@@ -137,6 +144,16 @@ test('real Canvas TRIM converts a CIRCLE into an editable true ARC; DXF export r
   expect(text).toContain('40\r\n500\r\n')
   await page.locator('button[title="復原 Ctrl+Z"]').click()
   await expect.poll(async()=> (await saved(page)).entities[0].kind).toBe('circle')
+  // The DXF we just downloaded must open again through the real file chooser.
+  page.once('dialog',dialog=>{void dialog.accept()})
+  await page.locator('input[type="file"]').setInputFiles({
+    name:'roundtrip.dxf',mimeType:'application/dxf',
+    buffer:Buffer.from(text,'utf8')
+  })
+  await expect.poll(async()=> (await saved(page) as {name:string}).name).toBe('roundtrip')
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'arc',radius:500,startAngle:120,endAngle:60
+  })
 })
 test('ARC created from three command points survives JSON storage and SVG plot UI',async({page})=>{
   await page.goto('/')
