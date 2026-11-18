@@ -2,10 +2,11 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   ArrowDownToLine, Box, Circle, Command, CornerDownLeft, Type, PencilRuler, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
   HelpCircle, Layers3, LockKeyhole, Minus, MousePointer2, PanelRightClose, PanelRightOpen,
-  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2,
+  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer,
   UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import CadCanvas from './components/CadCanvas'
+import PlotDialog from './components/PlotDialog'
 import { findCommand, parsePointInput } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { distance } from './cad/geometry'
@@ -100,9 +101,10 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.5.0：支援 DXF 2000 匯入／匯出；先備份 JSON 再交換圖面。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.6.0：PLOT 定比例出圖，A3／A4、1:50／1:100 向量列印與 SVG。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [plotOpen, setPlotOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [exchangeReport, setExchangeReport] = useState<{title:string;messages:string[]} | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -390,6 +392,7 @@ export default function App() {
       case 'linearDimension': startAnnotation('linear'); return
       case 'alignedDimension': startAnnotation('aligned'); return
       case 'dimstyle': setPanelOpen(true); showNotice('請於右側「標註樣式」設定文字、箭頭及精度。'); return
+      case 'plot': setPlotOpen(true); return
       case 'block': startBlockCreation(); return
       case 'insert': beginInsert(); return
       case 'explode': explodeSelected(); return
@@ -403,6 +406,9 @@ export default function App() {
       const target = ev.target as HTMLElement | null
       const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
       if (ev.isComposing) return
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') {
+        ev.preventDefault(); setPlotOpen(true); return
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
         ev.preventDefault(); dispatch({ type: ev.shiftKey ? 'redo' : 'undo' }); setDraft(null); return
       }
@@ -495,12 +501,13 @@ export default function App() {
       <div className="header-actions">
         <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
         <button title="開啟 JSON / DXF 檔案" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
+        <button title="PLOT / Ctrl+P — 按毫米定比例出圖" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
         <button title="將圖面匯出 ASCII DXF 2000" onClick={exportDrawingDxf}><ArrowDownToLine size={16}/><span>匯出 DXF</span></button>
         <button className="header-primary" title="匯出原生 JSON 主檔" onClick={() => downloadDocument(doc)}><Save size={16}/><span>備份 JSON</span></button>
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.5.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.6.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -658,7 +665,9 @@ export default function App() {
       </aside>}
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.5.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.6.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+      ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
@@ -668,6 +677,6 @@ export default function App() {
       ['M / MOVE', '移動所選物件：基準點 → 目標點'], ['CO / COPY', '複製所選物件：基準點 → 目標點'], ['RO / ROTATE', '旋轉所選物件：中心點 → 角度（度）'], ['E / ERASE', '刪除已選取物件'], ['U / UNDO', '復原'], ['REDO', '重做'], ['Z / ZOOM', '縮放至全圖'], ['SAVE', '匯出原生 JSON'],
       ['100,200', '絕對座標 (mm)'], ['@3000,0', '相對座標 (mm)'], ['@1000<90', '相對極座標'], ['1500', '從上一點沿游標方向指定距離'],
       ['交點鎖點', '線段／聚合線／矩形／圓的有限交點'], ['F3', '切換物件鎖點'], ['F8', '切換正交'], ['Esc', '取消操作'], ['中鍵拖曳', '平移畫布'], ['滾輪', '游標處縮放'], ['Ctrl+Z / Ctrl+Y', '復原／重做'],
-    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。僅支援原生 .webcad.json；DWG、完整 DXF 格式相容性與正式施工圖出圖仍在後續規劃中；目前尺寸標註是獨立圖元，尚未與其他圖元建立尺寸關聯；本版圖塊僅支援一層參照、無巢狀及動態圖塊。</p></div></div>}
+    ].map(([cmd, desc]) => <div key={cmd}><code>{cmd}</code><span>{desc}</span></div>)}</div><p className="help-note">目前提供基本精準繪圖、圖層與單物件編輯。支援原生 JSON、DXF 子集與基本定比例 SVG／瀏覽器 PDF 列印；DWG、完整 DXF、可靠施工出圖及真實印表機物理精度驗收仍在後續規劃中；目前尺寸標註是獨立圖元，尚未與其他圖元建立尺寸關聯；本版圖塊僅支援一層參照、無巢狀及動態圖塊。</p></div></div>}
   </div>
 }
