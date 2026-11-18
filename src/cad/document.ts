@@ -126,7 +126,9 @@ export function parseDocument(input: unknown): CadDocument {
     || d.entities.some(e => (e.kind === 'dimension'||e.kind==='curveDimension') && !styles.some(s => s.id === e.styleId))) {
     throw new Error('標註樣式或關聯無效')
   }
-  return d as CadDocument
+  // Saved linked labels are always synchronized from the actual source model,
+  // including JSON changed by an external editor. Legacy snapshots stay intact.
+  return reconcileCurveAssociations(d as CadDocument,d as CadDocument)
 }
 
 export interface History { past: CadDocument[]; present: CadDocument; future: CadDocument[] }
