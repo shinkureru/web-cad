@@ -12,7 +12,10 @@ export const arcSweep=(arc:Pick<ArcEntity,'startAngle'|'endAngle'>):number=>
   normalizeAngle(arc.endAngle-arc.startAngle)
 export function arcAt(arc:Pick<ArcEntity,'center'|'radius'|'startAngle'>,tDegrees:number):Point{
   const a=tDegrees*DEG
-  return {x:arc.center.x+arc.radius*Math.cos(a),y:arc.center.y+arc.radius*Math.sin(a)}
+  const x=arc.radius*Math.cos(a),y=arc.radius*Math.sin(a)
+  // Remove floating-point dust at the cardinal angles; preserves exact bounds.
+  return {x:arc.center.x+(Math.abs(x)<arc.radius*1e-12?0:x),
+    y:arc.center.y+(Math.abs(y)<arc.radius*1e-12?0:y)}
 }
 export function arcPoint(arc:ArcEntity,fraction:number):Point{
   return arcAt(arc,arc.startAngle+arcSweep(arc)*fraction)
@@ -50,7 +53,7 @@ export function arcFromThreePoints(start:Point,onArc:Point,end:Point,id:string,l
   // The middle point must lie on the chosen positive sweep.
   const first=normalizeAngle(m-a),last=normalizeAngle(b-a)
   const ccw=first>1e-7&&first<last-1e-7
-  const startAngle=rounded(ccw?a:b),endAngle=rounded(ccw?b:a)
+  const startAngle=normalizeAngle(rounded(ccw?a:b)),endAngle=normalizeAngle(rounded(ccw?b:a))
   if(arcSweep({startAngle,endAngle})<1e-5)throw new Error('圓弧角度跨度太小')
   return {id,kind:'arc',layerId,center,radius,startAngle,endAngle}
 }
@@ -126,7 +129,7 @@ export function trimArc(arc:ArcEntity,cutters:CadPrimitive[],click:Point,newId:(
   if(stops[removal+1]<1-1e-6)kept.push([stops[removal+1],1])
   return kept.map(([a,b],i)=>({
     ...arc,id:i===0?arc.id:newId(),
-    startAngle:rounded(normalizeAngle(arc.startAngle+a*sweep)),
-    endAngle:rounded(normalizeAngle(arc.startAngle+b*sweep))
+    startAngle:normalizeAngle(rounded(arc.startAngle+a*sweep)),
+    endAngle:normalizeAngle(rounded(arc.startAngle+b*sweep))
   }))
 }
