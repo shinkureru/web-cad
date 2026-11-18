@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   ArrowDownToLine, Box, Circle, Command, CornerDownLeft, Type, PencilRuler, FilePlus2, FolderOpen, Grid3X3, Copy, Move, RotateCw,
   HelpCircle, Layers3, LockKeyhole, Minus, MousePointer2, PanelRightClose, PanelRightOpen,
-  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer,
+  PenLine, Plus, Redo2, Ruler, Save, Scan, Square, Trash2, Undo2, Printer, Scissors,
   UnlockKeyhole, Eye, EyeOff, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import CadCanvas from './components/CadCanvas'
@@ -11,6 +11,7 @@ import { findCommand, parsePointInput } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
+import { offsetDocument, trimDocument } from './cad/precisionEdit'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
 import { exportDxf, importDxf } from './cad/dxf'
@@ -88,6 +89,8 @@ export default function App() {
   const [tool, setTool] = useState<Tool>('select')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [edit, setEdit] = useState<{ kind: EditTool; base: Point | null } | null>(null)
+  const [offsetMode, setOffsetMode] = useState<{ sourceId: string; distance: number | null } | null>(null)
+  const [trimMode, setTrimMode] = useState<{ boundaryIds: string[] } | null>(null)
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -101,7 +104,7 @@ export default function App() {
   const [ortho, setOrtho] = useState(false)
   const [wallThickness, setWallThickness] = useState(120)
   const [commandText, setCommandText] = useState('')
-  const [log, setLog] = useState<string[]>(['Web CAD v0.6.0：PLOT 定比例出圖，A3／A4、1:50／1:100 向量列印與 SVG。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v0.7.0：O / OFFSET 偏移、TR / TRIM 精準修剪，Esc 結束操作。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -233,8 +236,53 @@ export default function App() {
     if(!e || !l?.visible || l.locked)return
     editDoc(d=>({...d,entities:d.entities.map(item=>item.id===selectedId?{...item,...changes} as CadEntity:item)}))
   }
+  function startOffset() {
+    const source=doc.entities.find(e=>e.id===selectedId)
+    const layer=source&&doc.layers.find(l=>l.id===source.layerId)
+    if(!source||!['line','circle','rectangle','polyline'].includes(source.kind)
+      ||!layer?.visible||layer.locked){
+      showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
+    }
+    setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null)
+    setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
+    setTool('select')
+    logMessage('OFFSET：輸入偏移距離（mm），按 Enter；再點選要偏移的一側。')
+    inputRef.current?.focus()
+  }
+  function finishOffset(side:Point) {
+    if(!offsetMode?.distance){showNotice('請先在指令列輸入偏移距離（mm）。');return}
+    try{
+      const cloneId=uid()
+      const next=offsetDocument(doc,offsetMode.sourceId,offsetMode.distance,side,cloneId)
+      editDoc(()=>next)
+      logMessage('已偏移 '+offsetMode.distance+' mm；可繼續點選另一側，按 Esc 結束。')
+    }catch(error){showNotice(error instanceof Error?error.message:'OFFSET 無法完成')}
+  }
+  function startTrim() {
+    const boundaries=doc.entities.filter(e=>selectedIds.includes(e.id))
+    if(!boundaries.length||boundaries.some(e=>{
+      const l=doc.layers.find(layer=>layer.id===e.layerId)
+      return !l?.visible||!['line','polyline','rectangle','circle','insert'].includes(e.kind)
+    })){
+      showNotice('TRIM：請先 Shift+點選一個或多個可見裁切邊界（直線／矩形／圓／聚合線／圖塊）。')
+      return
+    }
+    setTrimMode({boundaryIds:boundaries.map(e=>e.id)})
+    setOffsetMode(null);setEdit(null);setBlockCreate(null);setBlockInsert(null)
+    setAnnotation(null);setDraft(null);setTool('select');selectSingle(null)
+    logMessage('TRIM：在畫布上點選要移除的線段部分；裁切邊界保持不變。按 Esc 結束。')
+  }
+  function finishTrim(targetId:string|null,point:Point) {
+    if(!trimMode)return
+    if(!targetId){showNotice('請點擊要修剪的直線或開放聚合線。');return}
+    try{
+      const next=trimDocument(doc,trimMode.boundaryIds,targetId,point,uid)
+      editDoc(()=>next);selectSingle(null)
+      logMessage('TRIM 已修剪目標物件；可繼續點選其他線段，按 Esc 結束。')
+    }catch(error){showNotice(error instanceof Error?error.message:'TRIM 無法完成')}
+  }
   function startTool(next: Tool) {
-    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); selectSingle(null)
+    setTool(next); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null); selectSingle(null)
     if (next !== 'select') lastTool.current = next
     logMessage(next === 'select' ? '選取物件，按 Delete 刪除。' : `${tools.find(t => t.id === next)?.label}：指定第一點。`)
   }
@@ -244,7 +292,7 @@ export default function App() {
     if (!entity || !sourceLayer?.visible || sourceLayer.locked) {
       showNotice('請先選取可編輯的物件（圖層須顯示且未鎖定）。'); return
     }
-    setTool('select'); setDraft(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null)
+    setTool('select'); setDraft(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null);setOffsetMode(null);setTrimMode(null)
     setEdit({ kind, base: null })
     logMessage(`${editTools.find(t => t.id === kind)?.label}：指定基準點。`)
   }
@@ -333,6 +381,25 @@ export default function App() {
   }
   const runCommand = (text: string) => {
     const raw = text.trim()
+    if(offsetMode){
+      if(findCommand(raw)==='cancel'){setOffsetMode(null);logMessage('已結束 OFFSET。');return}
+      if(offsetMode.distance===null||(/^\d+(?:\.\d+)?$/.test(raw) && Number(raw)>0)){
+        const amount=Number(raw)
+        if(!Number.isFinite(amount)||amount<=0||amount>1000000){
+          showNotice('OFFSET 距離請輸入 0–1,000,000 mm 之間的正數。');return
+        }
+        setOffsetMode({...offsetMode,distance:amount})
+        logMessage('OFFSET '+amount+' mm：點擊來源物件的偏移側，可多次偏移；Esc 結束。')
+        return
+      }
+      const side=parsePointInput(raw,null,cursor)
+      if(side){finishOffset(side);return}
+      showNotice('請輸入有效的偏移距離或側邊絕對座標 X,Y；Esc 結束。');return
+    }
+    if(trimMode){
+      if(!raw||findCommand(raw)==='cancel'){setTrimMode(null);logMessage('已結束 TRIM。');return}
+      showNotice('TRIM 請在畫布上點擊要移除的線段部分；按 Esc 結束。');return
+    }
     if(annotation){
       if(annotation.kind==='text' && !annotation.text){
         if(!raw || raw.length>2048){showNotice('文字內容需為 1–2048 字元。');return}
@@ -393,6 +460,8 @@ export default function App() {
       case 'alignedDimension': startAnnotation('aligned'); return
       case 'dimstyle': setPanelOpen(true); showNotice('請於右側「標註樣式」設定文字、箭頭及精度。'); return
       case 'plot': setPlotOpen(true); return
+      case 'offset': startOffset(); return
+      case 'trim': startTrim(); return
       case 'block': startBlockCreation(); return
       case 'insert': beginInsert(); return
       case 'explode': explodeSelected(); return
@@ -415,7 +484,7 @@ export default function App() {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') {
         ev.preventDefault(); dispatch({ type: 'redo' }); setDraft(null); return
       }
-      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
+      if (ev.key === 'Escape') { ev.preventDefault(); setDraft(null); setEdit(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null); setOffsetMode(null); setTrimMode(null); setTool('select'); selectSingle(null); logMessage('已取消操作。'); return }
       if (ev.key === 'F3') { ev.preventDefault(); setOsnap(old => !old); return }
       if (ev.key === 'F8') { ev.preventDefault(); setOrtho(old => !old); return }
       if (!editing && ev.key === 'Delete') { ev.preventDefault(); deleteSelected(); return }
@@ -488,7 +557,10 @@ export default function App() {
   const selectedEntity = doc.entities.find(e => e.id === selectedId)
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
-  const title = annotation
+  const title = offsetMode
+    ? offsetMode.distance===null?'輸入偏移距離（mm）':'點選偏移側或輸入 X,Y；Esc 結束'
+    : trimMode?'點選要修剪的線段；Esc 結束'
+    : annotation
     ? annotation.kind==='text' ? (annotation.text?'指定文字插入點（X,Y）':'輸入要插入的繁體中文文字')
     : ['指定第一個標註點','指定第二個標註點','指定標註線位置'][annotation.points.length]
     : blockCreate ? blockCreate.name ? '指定圖塊基準點，例如 0,0' : '輸入新圖塊名稱後按 Enter' : blockInsert ? '指定圖塊插入點，例如 1500,1200' : edit ? edit.base ? (edit.kind === 'rotate' ? '輸入旋轉角度（度）或點選方向' : '指定第二點，例如 @3000,0') : '指定基準點' : draft?.tool === 'polyline' && draft.points.length >= 2 ? '指定下一點，按 Enter 完成聚合線' : draft ? '指定下一點 / 輸入距離或座標' : '輸入指令（例如 L、PL、REC、C）'
@@ -507,7 +579,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.6.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v0.7.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -519,6 +591,8 @@ export default function App() {
         <div className="rail-separator"/>
         {editTools.map(({ id, Icon, label, alias }) => <button key={id} className={`rail-tool ${edit?.kind === id ? 'is-active' : ''}`} title={`${label} (${alias})；先選取物件`} aria-label={label} disabled={!selectedEntity || !selectedLayer?.visible || selectedLayer.locked} onClick={() => startEdit(id)}><Icon size={20}/><span>{label}</span></button>)}
         <div className="rail-separator"/>
+        <button className={'rail-tool '+(offsetMode?'is-active':'')} title="O / OFFSET — 選取圖元後偏移指定毫米距離" onClick={startOffset}><Copy size={20}/><span>偏移 O</span></button>
+        <button className={'rail-tool '+(trimMode?'is-active':'')} title="TR / TRIM — Shift 多選邊界後修剪目標" onClick={startTrim}><Scissors size={20}/><span>修剪 TR</span></button>
         <button className="rail-tool" title="B / BLOCK — 將 Shift 多選圖元建立成圖塊" disabled={!selectedIds.length} onClick={startBlockCreation}><Box size={20}/><span>建立圖塊</span></button>
         <button className="rail-tool" title="I / INSERT — 插入圖塊" onClick={() => beginInsert()}><Copy size={20}/><span>插入圖塊</span></button>
         <button className="rail-tool" title="X / EXPLODE — 分解所選圖塊" disabled={selectedEntity?.kind !== 'insert'} onClick={explodeSelected}><Layers3 size={20}/><span>分解圖塊</span></button>
@@ -539,7 +613,7 @@ export default function App() {
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
         </div>
         <div className="canvas-wrapper">
-          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation} annotation={annotation} grid={grid} osnap={osnap} ortho={ortho}/>
+          <CadCanvas doc={doc} tool={tool} camera={camera} onCameraChange={setCamera} draft={draft} selectedId={selectedId} selectedIds={selectedIds} textHeight={newTextHeight} cursor={cursor} onCursorChange={setCursor} onPoint={p => offsetMode ? finishOffset(p) : annotation ? annotationPoint(p) : blockCreate ? blockCreate.name ? finishBlockCreation(p) : showNotice('請先在指令列輸入圖塊名稱。') : blockInsert ? finishInsert(p) : edit ? finishEdit(p) : addPoint(p)} onSelect={selectOnCanvas} onPick={finishTrim} trimBoundaryIds={trimMode?.boundaryIds ?? []} offsetPreview={offsetMode?.distance ? {sourceId:offsetMode.sourceId,distance:offsetMode.distance}:null} edit={edit} wallThickness={wallThickness} blockPreview={blockInsert?.blockId ?? null} pointInputMode={!!blockCreate || !!blockInsert || !!annotation || !!offsetMode} annotation={annotation} pickMode={!!trimMode} grid={grid} osnap={osnap} ortho={ortho}/>
           {notice && <div className="toast" role="status">{notice}</div>}
           {exchangeReport && <aside className="exchange-report" role="status" aria-label="檔案交換結果">
             <header><strong>{exchangeReport.title}</strong>
@@ -666,7 +740,9 @@ export default function App() {
     </div>
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {cursor.x.toFixed(1)} <span className="status-sep">·</span> Y {cursor.y.toFixed(1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">毫米 (mm)</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.6.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v0.7.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+      ['O / OFFSET', '先選取物件 → O → 輸入距離（mm） → 點擊偏移一側，Esc 結束'],
+      ['TR / TRIM', 'Shift+點選一個或多個切割邊界 → TR → 點擊要刪除的直線／開放聚合線部分'],
       ['PLOT / Ctrl+P', '開啟定比例列印：A3/A4、1:20/50/100/200/500，SVG 或瀏覽器儲存 PDF'],
       ['檔案交換', '開啟可匯入 ASCII DXF 2000；右上可匯出 DXF 或備份 JSON'],
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
