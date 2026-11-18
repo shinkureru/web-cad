@@ -734,7 +734,7 @@ export default function App() {
         <button title="鍵盤與單位設定" aria-label="鍵盤與單位設定" onClick={() => setSettingsOpen(true)}><Settings2 size={16}/><span>設定</span></button>
         <button title="新建圖面" onClick={() => { if (window.confirm('建立新圖面？目前內容仍可從已匯出的 JSON 還原。')) { dispatch({ type: 'replace', document: createDocument() }); selectSingle(null); setDraft(null); startTool('select') } }}><FilePlus2 size={16}/><span>新建</span></button>
         <button title="開啟 JSON / DXF 檔案" onClick={() => fileRef.current?.click()}><FolderOpen size={16}/><span>開啟</span></button>
-        <button title="PLOT / Ctrl+P — 按毫米定比例出圖" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
+        <button title="PLOT 指令 — 按毫米定比例出圖（Ctrl／Command+P 為瀏覽器列印）" onClick={() => setPlotOpen(true)}><Printer size={16}/><span>比例出圖</span></button>
         <button title="將圖面匯出 ASCII DXF 2000" onClick={exportDrawingDxf}><ArrowDownToLine size={16}/><span>匯出 DXF</span></button>
         <button className="header-primary" title="匯出原生 JSON 主檔" onClick={() => downloadDocument(doc)}><Save size={16}/><span>備份 JSON</span></button>
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
@@ -770,8 +770,12 @@ export default function App() {
           <div className="toolbar-set"><button title="復原 Ctrl+Z" disabled={!history.past.length} onClick={() => dispatch({ type: 'undo' })}><Undo2 size={16}/></button><button title="重做 Ctrl+Y" disabled={!history.future.length} onClick={() => dispatch({ type: 'redo' })}><Redo2 size={16}/></button></div>
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button className={grid ? 'pressed' : ''} title="顯示格線" onClick={() => setGrid(!grid)}><Grid3X3 size={16}/> 格線</button><button className={osnap ? 'pressed' : ''} title="物件鎖點 F3" onClick={() => setOsnap(!osnap)}><Scan size={16}/> 鎖點</button><button className={ortho ? 'pressed' : ''} title="正交 F8" onClick={() => setOrtho(!ortho)}><CornerDownLeft size={16}/> 正交</button></div>
-          {tool === 'wall' && <label className="wall-thickness">牆厚 <input aria-label="牆厚（mm）" type="number" value={wallThickness} min={1} max={2000} step={10}
-            onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1 && n <= 2000) setWallThickness(n) }}/><span>mm</span></label>}
+          {tool === 'wall' && <label className="wall-thickness">牆厚 <input aria-label={'牆厚（'+preferences.inputUnit+'）'} type="number"
+            value={wallThickness/unitToMm(preferences.inputUnit)}
+            min={1/unitToMm(preferences.inputUnit)} max={2000/unitToMm(preferences.inputUnit)}
+            step={preferences.inputUnit==='cm'?.1:1}
+            onChange={e=>{const n=Number(e.target.value)*unitToMm(preferences.inputUnit);
+              if(Number.isFinite(n)&&n>=1&&n<=2000)setWallThickness(Math.round(n*1000)/1000)}}/><span>{preferences.inputUnit}</span></label>}
           <div className="toolbar-divider"/>
           <div className="toolbar-set"><button title="放大" onClick={() => setCamera(c => ({ ...c, scale: Math.min(40, c.scale * 1.3) }))}><ZoomIn size={17}/></button><button title="縮小" onClick={() => setCamera(c => ({ ...c, scale: Math.max(.004, c.scale / 1.3) }))}><ZoomOut size={17}/></button><button title="縮放至圖面範圍" onClick={fitView}><Scan size={16}/> 全圖</button></div>
           <div className="toolbar-fill"/><button className="panel-toggle" title="顯示／隱藏屬性面板" onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? <PanelRightClose size={17}/> : <PanelRightOpen size={17}/>}</button>
@@ -920,8 +924,12 @@ export default function App() {
           </select></label>
           <label>單位後綴（可留空）<input aria-label="尺寸單位後綴" maxLength={16}
             value={getDimensionStyle(doc).suffix} onChange={e=>updateDimensionStyle({suffix:e.target.value})}/></label>
-          <label>新增文字高度（mm）<input type="number" min={1} max={10000} value={newTextHeight}
-            onChange={e=>{const n=Number(e.target.value);if(n>0&&n<=10000)setNewTextHeight(n)}}/></label>
+          <label>新增文字高度（{preferences.inputUnit}）<input type="number"
+            min={1/unitToMm(preferences.inputUnit)} max={10000/unitToMm(preferences.inputUnit)}
+            step={preferences.inputUnit==='cm'?.1:1}
+            value={newTextHeight/unitToMm(preferences.inputUnit)}
+            onChange={e=>{const n=Number(e.target.value)*unitToMm(preferences.inputUnit);
+              if(n>0&&n<=10000)setNewTextHeight(Math.round(n*1000)/1000)}}/></label>
           <p>標註尺寸由幾何座標計算，標註樣式變更會套用至共用此樣式的尺寸。</p>
         </div>
         <div className="panel-footer"><span className="footer-label">快速開始</span><button onClick={() => { if (doc.entities.length && !window.confirm('載入示範圖面會取代目前內容，確定繼續？')) return; dispatch({ type: 'replace', document: sampleDocument() }); selectSingle(null); setDraft(null); setBlockInsert(null); setBlockCreate(null); setAnnotation(null); setActiveBlockId(''); setCamera({ x: 3000, y: 2100, scale: .12 }); showNotice('已載入可編輯的室內平面示範圖。') }}>載入示範平面圖 <ArrowDownToLine size={15}/></button></div>
