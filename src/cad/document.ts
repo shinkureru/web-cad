@@ -1,6 +1,7 @@
 import type { BlockDefinition, CadDocument, CadEntity, CadLayer, DimensionStyle, Point } from './types'
 
 import { DEFAULT_DIMENSION_STYLES } from './annotations'
+import { arcSweep } from './arcs'
 
 export const STORAGE_KEY = 'web-cad:v1:document'
 export const uid = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -41,6 +42,10 @@ function isEntity(x: unknown, layers: Set<string>): x is CadEntity {
     case 'line': case 'rectangle': return isPoint(e.start) && isPoint(e.end)
     case 'polyline': return Array.isArray(e.points) && e.points.length >= 2 && e.points.every(isPoint)
     case 'circle': return isPoint(e.center) && Number.isFinite(e.radius) && e.radius > 0
+    case 'arc': return isPoint(e.center) && Number.isFinite(e.radius) && e.radius > 0 && e.radius <= 1e9
+      && Number.isFinite(e.startAngle) && Number.isFinite(e.endAngle)
+      && e.startAngle >= 0 && e.startAngle < 360 && e.endAngle >= 0 && e.endAngle < 360
+      && arcSweep(e) > 1e-5
     case 'insert': return typeof e.blockId === 'string' && isPoint(e.position)
       && Number.isFinite(e.rotation)
     case 'text': return isPoint(e.position) && typeof e.text === 'string'
@@ -70,7 +75,7 @@ function isBlock(value: unknown, layers: Set<string>): value is BlockDefinition 
   return typeof block.id === 'string' && block.id.length > 0
     && typeof block.name === 'string' && block.name.trim().length > 0
     && Array.isArray(block.entities) && block.entities.length > 0
-    && block.entities.every(e => ['line','polyline','rectangle','circle'].includes((e as CadEntity).kind) && isEntity(e, layers))
+    && block.entities.every(e => ['line','polyline','rectangle','circle','arc'].includes((e as CadEntity).kind) && isEntity(e, layers))
 }
 /** Strict validation of the prototype's native JSON format. Never render unknown schema entities. */
 export function parseDocument(input: unknown): CadDocument {
