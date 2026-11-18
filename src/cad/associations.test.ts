@@ -1,6 +1,7 @@
 import { describe,it,expect } from 'vitest'
 import { createDocument,documentReducer,parseDocument } from './document'
-import type { CadDocument,CadEntity,CurveDimensionEntity,History } from './types'
+import type {History} from './document'
+import type { CadDocument,CadEntity,CurveDimensionEntity } from './types'
 import {curveDimensionPicture,makeCurveDimension} from './curveDimensions'
 import {getDimensionStyle} from './annotations'
 import {copyAssociationSourceIds,linkCurveDimension,linkCurveDimensionInDocument,
