@@ -12,7 +12,7 @@ import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from
 import { distance } from './cad/geometry'
 import { rotateEntity, translateEntity } from './cad/editing'
 import { offsetDocument, trimDocument } from './cad/precisionEdit'
-import { extendLine, joinLines, cornerGeometry } from './cad/advancedEditing'
+import { extendLine, joinLines } from './cad/advancedEditing'
 import type { CornerMode } from './cad/advancedEditing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
