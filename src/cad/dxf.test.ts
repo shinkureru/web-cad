@@ -146,8 +146,16 @@ describe('DXF 2000 interchange',()=>{
     doc=createBlockFromSelection(doc,['L1','L2'],'家具圖塊',P(0,0),'smoke-block','smoke-insert')
     doc.entities.push({id:'another',kind:'insert',layerId:'furniture',
       blockId:'smoke-block',position:P(4800,2600),rotation:90})
+    // Independently check that the new curve annotations appear in a real DXF parser.
+    doc.entities.push({kind:'curveDimension',id:'angle-snapshot',layerId:'dimension',
+      measure:'angle',center:P(2400,1400),radius:500,startAngle:350,endAngle:45,
+      placement:P(2850,2100),styleId:'standard'})
+    doc.entities.push({kind:'curveDimension',id:'radius-snapshot',layerId:'dimension',
+      measure:'radius',center:P(2400,1400),radius:500,
+      placement:P(3150,1900),styleId:'standard'})
     const exported=exportDxf(doc)
-    expect(exported.warnings).toEqual([])
+    expect(exported.warnings).toHaveLength(1)
+    expect(exported.warnings[0]).toContain('展開')
     writeFileSync(destination,exported.text,'utf8')
   })
   it('imports independently generated ezdxf geometry and blocks (CI reverse direction)',()=>{
