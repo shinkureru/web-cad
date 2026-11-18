@@ -8,7 +8,7 @@ import {
 import CadCanvas from './components/CadCanvas'
 import PlotDialog from './components/PlotDialog'
 import CadSettingsDialog from './components/CadSettingsDialog'
-import { EDITABLE_SHORTCUTS, findCommand, parseLengthInput, parsePointInput, unitToMm } from './cad/commands'
+import { findCommand, parseLengthInput, parsePointInput, unitToMm } from './cad/commands'
 import { createDocument, documentReducer, parseDocument, STORAGE_KEY, uid } from './cad/document'
 import { canRedirectPlainKey, loadPreferences, PREF_STORAGE_KEY, shouldSubmitCommandKey, shouldSubmitInCommandInput } from './cad/preferences'
 import type { CadPreferences } from './cad/preferences'
