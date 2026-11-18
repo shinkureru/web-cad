@@ -239,7 +239,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview]
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -249,7 +249,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     let p = toWorld(screen, camera, size.width, size.height)
     // OFFSET side and TRIM pick must be raw cursor positions; endpoint OSNAP would
     // change the side or the segment to delete at a crossing.
-    if(offsetPreview || pickMode || (pointInputMode && !annotation && !blockPreview && !edit))
+    if(offsetPreview || pickMode)
       {setSnap(null);return roundPoint(p)}
     if (ortho && draft?.points.length) p = orthoPoint(draft.points.at(-1)!, p)
     else if (ortho && edit?.base && edit.kind !== 'rotate') p = orthoPoint(edit.base, p)
