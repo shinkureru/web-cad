@@ -55,5 +55,5 @@ export interface CadDocument {
   activeDimensionStyleId?: string
 }
 export interface Draft { tool: Exclude<Tool, 'select'>; points: Point[] }
-export type SnapKind = '端點' | '中點' | '圓心' | '交點'
+export type SnapKind = '端點' | '中點' | '圓心' | '交點' | '象限點' | '垂足'
 export interface Snap { point: Point; kind: SnapKind }

@@ -82,7 +82,7 @@ export function parseLengthInput(raw:string,defaultUnit:InputUnit='mm'):number|n
 }
 const LENGTH='-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:mm|cm|m|毫米|公分|公尺)?'
 const pair=new RegExp('^(@)?('+LENGTH+'),('+LENGTH+')$','i')
-const polar=new RegExp('^@('+LENGTH+')<(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))$','i')
+const polar=new RegExp('^@?('+LENGTH+')<(-?(?:\\d+(?:\\.\\d*)?|\\.\\d+))$','i')
 
 /** CAD coordinates: X,Y / @DX,DY / @DIST<ANGLE / scalar in cursor direction.
  * World geometry is always mm; only bare command-line input is configurable.

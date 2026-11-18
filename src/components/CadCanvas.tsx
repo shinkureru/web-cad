@@ -9,6 +9,8 @@ import { dimensionGeometry, getDimensionStyle } from '../cad/annotations'
 import { offsetEntity } from '../cad/precisionEdit'
 import { cornerGeometry, windowSelection } from '../cad/advancedEditing'
 import { arcFromThreePoints } from '../cad/arcs'
+import { entityGrips, moveGrip } from '../cad/grips'
+import type { InputUnit } from '../cad/commands'
 import type { CornerMode } from '../cad/advancedEditing'
 
 interface Props {
@@ -17,6 +19,8 @@ interface Props {
   cursor: Point; onCursorChange: (v: Point) => void
   onPoint: (p: Point) => void; onSelect: (id: string | null, extend: boolean) => void
   onSelectMany: (ids: string[], extend: boolean) => void
+  onGripMove: (entityId:string,gripId:string,point:Point)=>void
+  inputUnit: InputUnit
   onPick: (id: string | null, point: Point) => void; pickMode: boolean
   pickLabel: 'trim'|'extend'|null; cornerMode: CornerMode|null; cornerPreviewValue: string
   trimBoundaryIds: string[]; offsetPreview: {sourceId: string; distance: number} | null
@@ -104,7 +108,7 @@ const drawEntity = (ctx: CanvasRenderingContext2D, docEntity: CadDisplayEntity,
   ctx.stroke()
 }
 
-export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
+export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, selectedId, selectedIds, cursor, onCursorChange, onPoint, onSelect, onSelectMany, onGripMove, inputUnit, onPick, pickMode, pickLabel, cornerMode, cornerPreviewValue, trimBoundaryIds, offsetPreview, osnap, ortho, grid, edit, blockPreview, pointInputMode, wallThickness, annotation, textHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 1, height: 1 })
@@ -113,6 +117,8 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
   const drag = useRef<{ pointerId: number; at: Point; cam: Camera } | null>(null)
   const selectionRef=useRef<{pointerId:number;from:Point;shift:boolean;dragging:boolean}|null>(null)
   const [selectionBox,setSelectionBox]=useState<{from:Point;to:Point}|null>(null)
+  const gripDrag=useRef<{pointerId:number;entityId:string;gripId:string;from:Point}|null>(null)
+  const [gripPreview,setGripPreview]=useState<{entityId:string;gripId:string;point:Point}|null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -166,6 +172,33 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       ctx.setLineDash(type === 'dashed' ? [9, 6] : type === 'center' ? [16, 5, 3, 5] : [])
       drawEntity(ctx, entity, camera, w, h, entity.kind==='dimension' ? getDimensionStyle(doc,entity.styleId) : undefined)
       ctx.setLineDash([])
+    }
+    // v1.2 — draw editable model grips and live preview without mutating history.
+    if(tool==='select'&&!edit&&!pickMode&&!pointInputMode&&!cornerMode&&!offsetPreview &&
+      selectedId && selectedIds.length===1){
+      const source=doc.entities.find(e=>e.id===selectedId)
+      const layer=source&&doc.layers.find(l=>l.id===source.layerId)
+      if(source&&layer?.visible&&!layer.locked){
+        let display=source
+        if(gripPreview?.entityId===source.id){
+          try{display=moveGrip(source,gripPreview.gripId,gripPreview.point)}
+          catch{/* reject invalid previews, retain original */}
+        }
+        if(display!==source){
+          ctx.save();ctx.strokeStyle='#77d5f4';ctx.lineWidth=2;ctx.setLineDash([5,4])
+          for(const part of expandEntity(display,doc)){
+            drawEntity(ctx,part,camera,w,h,part.kind==='dimension'?getDimensionStyle(doc,part.styleId):undefined)
+          }
+          ctx.restore()
+        }
+        for(const grip of entityGrips(display)){
+          const screen=toScreen(grip.position,camera,w,h)
+          ctx.fillStyle=gripPreview?.gripId===grip.id?'#f8d17f':'#7bc2ee'
+          ctx.strokeStyle='#142230';ctx.lineWidth=1.2;ctx.setLineDash([])
+          ctx.fillRect(screen.x-5,screen.y-5,10,10)
+          ctx.strokeRect(screen.x-5,screen.y-5,10,10)
+        }
+      }
     }
     if(edit?.base && selectedIds.length){
       ctx.save()
@@ -289,12 +322,33 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
       }
       ctx.setLineDash([])
     }
+    const measurementBase=draft?.points.at(-1)??edit?.base??
+      (annotation&&annotation.kind!=='text'?annotation.points.at(-1):undefined)
+    if(measurementBase && !gripPreview){
+      const dx=hover.x-measurementBase.x,dy=hover.y-measurementBase.y
+      const length=Math.hypot(dx,dy)
+      if(length>.001){
+        const shown=inputUnit==='cm'?length/10:length
+        const angle=((Math.atan2(dy,dx)*180/Math.PI)%360+360)%360
+        const text=shown.toFixed(inputUnit==='cm'?2:1)+' '+inputUnit+
+          '  ∠ '+angle.toFixed(1)+'°'
+        const pt=toScreen(hover,camera,w,h)
+        ctx.save();ctx.font='12px monospace'
+        const width=ctx.measureText(text).width+18
+        const left=Math.min(w-width-8,Math.max(8,pt.x+18))
+        const top=Math.max(9,Math.min(h-28,pt.y-36))
+        ctx.fillStyle='#1a2b3de8';ctx.fillRect(left,top,width,24)
+        ctx.strokeStyle='#6c9bbd';ctx.strokeRect(left,top,width,24)
+        ctx.fillStyle='#d7e9f7';ctx.fillText(text,left+9,top+16)
+        ctx.restore()
+      }
+    }
     if (snap) {
       const p = toScreen(snap.point, camera, w, h)
       ctx.strokeStyle = '#f6d083'; ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
       ctx.fillStyle = '#f6d083'; ctx.font = '11px monospace'; ctx.fillText(snap.kind, p.x + 10, p.y - 8)
     }
-  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue])
+  }, [doc, camera, size, grid, draft, hover, selectedId, selectedIds, snap, edit, blockPreview, wallThickness, annotation, textHeight, trimBoundaryIds, offsetPreview, selectionBox, cornerMode, cornerPreviewValue,gripPreview,inputUnit,pickMode,pointInputMode,tool])
 
   function localPosition(ev: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>): Point {
     const r = ev.currentTarget.getBoundingClientRect()
@@ -310,7 +364,9 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     else if (ortho && edit?.base && edit.kind !== 'rotate') p = orthoPoint(edit.base, p)
     if (osnap) {
       const visible = new Set(doc.layers.filter(l => l.visible).map(l => l.id))
-      const found = nearestSnap(p, expandedDrawing(doc), visible, 12 / camera.scale)
+      const base=draft?.points.at(-1)??edit?.base??
+        (annotation?.kind!=='text'?annotation?.points.at(-1):undefined)
+      const found = nearestSnap(p, expandedDrawing(doc), visible, 12 / camera.scale, base)
       setSnap(found)
       if (found) return roundPoint(found.point)
     } else setSnap(null)
@@ -343,6 +399,13 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
         y:d.cam.y+(screen.y-d.at.y)/d.cam.scale})
       return
     }
+    const grip=gripDrag.current
+    if(grip?.pointerId===ev.pointerId){
+      const point=roundPoint(toWorld(screen,camera,size.width,size.height))
+      setGripPreview({entityId:grip.entityId,gripId:grip.gripId,point})
+      setHover(point);onCursorChange(point)
+      return
+    }
     const selection=selectionRef.current
     if(selection?.pointerId===ev.pointerId){
       if(Math.hypot(screen.x-selection.from.x,screen.y-selection.from.y)>=6){
@@ -371,6 +434,25 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     if(edit||pointInputMode){onPoint(point);return}
     if(tool==='select'){
       if(pickMode){onPick(pickAt(screen),roundPoint(toWorld(screen,camera,size.width,size.height)));return}
+      if(selectedIds.length===1&&selectedId&&!cornerMode&&!offsetPreview&&!ev.shiftKey){
+        const source=doc.entities.find(e=>e.id===selectedId)
+        const layer=source&&doc.layers.find(l=>l.id===source.layerId)
+        if(source&&layer?.visible&&!layer.locked){
+          let nearest:{id:string;d:number}|null=null
+          for(const grip of entityGrips(source)){
+            const at=toScreen(grip.position,camera,size.width,size.height)
+            const d=Math.hypot(at.x-screen.x,at.y-screen.y)
+            if(d<=9&&(!nearest||d<nearest.d))nearest={id:grip.id,d}
+          }
+          if(nearest){
+            gripDrag.current={pointerId:ev.pointerId,entityId:source.id,
+              gripId:nearest.id,from:screen}
+            setGripPreview({entityId:source.id,gripId:nearest.id,point:point})
+            ev.currentTarget.setPointerCapture(ev.pointerId)
+            ev.preventDefault();return
+          }
+        }
+      }
       selectionRef.current={pointerId:ev.pointerId,from:screen,shift:ev.shiftKey,dragging:false}
       ev.currentTarget.setPointerCapture(ev.pointerId)
       ev.preventDefault()
@@ -380,6 +462,17 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     }
   }
   function handlePointerUp(ev:React.PointerEvent<HTMLCanvasElement>){
+    const grip=gripDrag.current
+    if(grip?.pointerId===ev.pointerId){
+      gripDrag.current=null
+      setGripPreview(null)
+      const at=localPosition(ev)
+      if(Math.hypot(at.x-grip.from.x,at.y-grip.from.y)>=3){
+        onGripMove(grip.entityId,grip.gripId,
+          roundPoint(toWorld(at,camera,size.width,size.height)))
+      }
+      return
+    }
     if(drag.current?.pointerId===ev.pointerId){drag.current=null;return}
     const selection=selectionRef.current
     if(!selection||selection.pointerId!==ev.pointerId)return
@@ -395,7 +488,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     <canvas ref={canvasRef} className="cad-canvas" tabIndex={0} aria-label="CAD 繪圖畫布" style={{ cursor: drag.current ? 'grabbing' : pickMode?'cell' : selectionBox?'crosshair':'crosshair' }}
       onPointerMove={handlePointerMove} onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      onPointerCancel={() => { drag.current = null;selectionRef.current=null;setSelectionBox(null) }}
+      onPointerCancel={() => { drag.current = null;gripDrag.current=null;setGripPreview(null);selectionRef.current=null;setSelectionBox(null) }}
       onContextMenu={e => e.preventDefault()}
       onAuxClick={e => e.preventDefault()}
       onWheel={e => { e.preventDefault(); onCameraChange(zoomAt(camera, e.deltaY < 0 ? 1.15 : 1 / 1.15, localPosition(e), size.width, size.height)) }} />
@@ -403,7 +496,7 @@ export default function CadCanvas({ doc, camera, onCameraChange, tool, draft, se
     <div className="canvas-guide">{pickLabel==='trim'?'TRIM：點擊線段／圓弧／整圓上欲刪除的區段；金色虛線為裁切邊界':
       pickLabel==='extend'?'EXTEND：點選靠近欲延伸端點的線段；金色虛線為邊界':
       offsetPreview?'OFFSET：點擊偏移方向；青色虛線為預覽':
-      '拖曳框選：左→右完整／右→左交叉 · 滾輪縮放 · 中鍵平移'}</div>
+      '拖曳框選 · 選取後拖曳藍色夾點 · 方向輸入距離<角度 · 滾輪縮放'}</div>
     <div className="axis-widget"><span className="axis-y">Y</span><span className="axis-origin"/><span className="axis-x">X</span></div>
   </div>
 }

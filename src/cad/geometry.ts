@@ -1,5 +1,5 @@
 import type { Camera, CadEntity, CadPrimitive, Point, Snap } from './types'
-import { arcDistance, arcPoint, arcPrimitiveIntersections } from './arcs'
+import { arcDistance, arcPoint, arcPrimitiveIntersections, arcContainsAngle } from './arcs'
 import { dimensionGeometry, getDimensionStyle } from './annotations'
 
 export const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y)
@@ -37,12 +37,17 @@ export function entitySnaps(entity: CadEntity): Snap[] {
       const corners = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }]
       return [...corners.map(end), ...corners.map((p, i) => mid(p, corners[(i + 1) % 4]))]
     }
-    case 'circle': return [{ point: entity.center, kind: '圓心' }]
+    case 'circle': return [{ point: entity.center, kind: '圓心' },
+      ...[0,90,180,270].map(a=>({point:{x:entity.center.x+entity.radius*Math.cos(a*Math.PI/180),
+        y:entity.center.y+entity.radius*Math.sin(a*Math.PI/180)},kind:'象限點' as const}))]
     case 'arc': return [
       {point: arcPoint(entity,0),kind:'端點'},
       {point: arcPoint(entity,1),kind:'端點'},
       {point: arcPoint(entity,.5),kind:'中點'},
-      {point: entity.center,kind:'圓心'}
+      {point: entity.center,kind:'圓心'},
+      ...[0,90,180,270].filter(a=>arcContainsAngle(entity,a)).map(a=>({
+        point:{x:entity.center.x+entity.radius*Math.cos(a*Math.PI/180),
+          y:entity.center.y+entity.radius*Math.sin(a*Math.PI/180)},kind:'象限點' as const}))
     ]
     case 'insert': return [] // Caller expands block references using the document before snapping.
     case 'text': return [{ point: entity.position, kind: '端點' }]
@@ -50,7 +55,8 @@ export function entitySnaps(entity: CadEntity): Snap[] {
   }
 }
 
-export function nearestSnap(pointer: Point, entities: CadEntity[], visibleLayers: Set<string>, toleranceWorld: number): Snap | null {
+export function nearestSnap(pointer: Point, entities: CadEntity[], visibleLayers: Set<string>,
+  toleranceWorld: number, base?:Point): Snap | null {
   let best: Snap | null = null
   let min = toleranceWorld
   for (const entity of entities) {
@@ -58,6 +64,21 @@ export function nearestSnap(pointer: Point, entities: CadEntity[], visibleLayers
     for (const snap of entitySnaps(entity)) {
       const d = distance(pointer, snap.point)
       if (d < min) { best = snap; min = d }
+    }
+  }
+  if(base){
+    for(const entity of entities){
+      if(!visibleLayers.has(entity.layerId))continue
+      for(const segment of entitySegments(entity)){
+        const dx=segment.b.x-segment.a.x,dy=segment.b.y-segment.a.y,denom=dx*dx+dy*dy
+        if(denom<1e-10)continue
+        const t=((base.x-segment.a.x)*dx+(base.y-segment.a.y)*dy)/denom
+        if(t<0||t>1)continue
+        const foot=roundPoint({x:segment.a.x+dx*t,y:segment.a.y+dy*t})
+        if(distance(foot,base)<.001)continue
+        const d=distance(pointer,foot)
+        if(d<min){min=d;best={point:foot,kind:'垂足'}}
+      }
     }
   }
   const intersection = nearestIntersection(pointer, entities, visibleLayers, toleranceWorld)

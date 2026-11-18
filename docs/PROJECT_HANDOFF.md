@@ -1,6 +1,48 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v1.1.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v1.2.0 ｜ Repo：`shinkureru/web-cad`
+
+## v1.2.0 — 動態距離／角度、夾點編輯、精準屬性與 OSNAP
+
+### 版本協作與來源
+
+- 2026-11-18 使用者確認繼續 v1.2.0，沿用前一批規劃：動態尺寸輸入、可拖曳物件夾點、精確幾何屬性、強化 OSNAP，並補充真實 Chromium 操作回歸。
+- 確認 PR #11 已合併，main SHA 4d0200d7089978dbe02d0ed8fb06ed167944bcd1；從 main 建立 feat/v1.2.0-dynamic-input-grips-precision，建立 PR #12。所有修改仍留在分支，**由使用者自行驗收 Merge；禁止直接修改 main**。
+- package.json version 更新為 1.2.0。CAD document version:1、模型 mm、DXF AC1015、圖層／圖塊資料格式不改變；v1.1.0 cm/mm 輸入偏好及 Space/Enter 確認維持相容。
+
+### 完成內容
+
+- src/cad/commands.ts：在原本 @距離<角度 的相對極座標之外新增 350cm<45、350cm<90 等無 @ 的「基準點後指定距離＋角度」語法。保留 @、mm/cm/m、方向標量和世界座標 0.001 mm 精度；沒有基準點時不能使用極座標。
+- src/components/CadCanvas.tsx：移動滑鼠時，當已有繪圖上一點、尺寸標註基準點或 MOVE/COPY 基準點，在游標附近浮動顯示模型長度及角度 HUD，依所選 cm/mm 偏好顯示。它**是畫布讀數提示，不是游標旁可直接編輯的多輸入欄**，真正數字仍由命令列輸入。
+- src/cad/grips.ts：新增純幾何 entityGrips/moveGrip/commitGrip；支援 LINE 起/終點及中點平移、POLYLINE 頂點（封閉首尾同步）、RECT 四角、CIRCLE 圓心/半徑、ARC 圓心/半徑/弧起終角、TEXT/INSERT 插入點及 DIMENSION 控制點。保護鎖定/隱藏圖層、退化半徑、零長度與重合頂點；一次滑鼠放開只提交一次 Undo。
+- src/components/CadCanvas.tsx：選取單件可編輯圖元時繪製藍色方形夾點；按下並拖曳時，先以青色虛線預覽更新後的幾何，放開才存入模型。TRIM/EXTEND/OFFSET/多選等模式暫停夾點互動，避免衝突；保留中鍵平移、左右框選與原有點擊選取。
+- src/cad/grips.ts editGeometry/commitGeometry 與 src/components/GeometryProperties.tsx：右側精確編輯 LINE 的起終 X/Y、長度及角度；RECT 的對角位置、寬高；CIRCLE/ARC 圓心半徑；TEXT/INSERT 插入點。輸入 mm/cm/m 或當前預設單位，按 Enter 或失焦才提交，單次 Undo；LINE 改長度維持起點及方向，改角度維持起點及長度。
+- src/cad/geometry.ts 與 types.ts：OSNAP 新增 CIRCLE/ARC 真實象限點（只有實際弧角跨度的象限才可吸附）和相對目前繪圖基準點在有限 LINE/PL/RECT 上的垂足。其他端點、中點、圓心、交點繼續支援；F3 控制開關。
+- README、docs/GEOMETRY_WORKFLOW.md 補充詳細指令、模型安全條件、夾點拖曳、右側數值設定和人工測試步驟。
+
+### 自動驗證
+
+- 新增 src/cad/grips.test.ts 共 15 項：距離角度 mm/cm、夾點編修、LINE/RECT/CIRCLE/ARC/POLYLINE、鎖層、幾何退化、Undo/Redo、JSON/DXF 及新 OSNAP；原生 Vitest 總計 **149/149**。
+- e2e/cad.spec.ts 新增 3 組 Chromium Playwright：350cm<90、右側精確 LINE 長度 350cm 後 Undo，以及真正從畫布拖曳 LINE 終點／Undo；全套 E2E 總計 **11/11**。
+- 已有 TypeScript/Vite 正式建置成功；相關綠燈工作流程可於 PR #12 檢查。正式 Merge 前仍需確認最新 HEAD 對應的 build + Chromium E2E 都成功（不是舊 commit 的 CI 結果）。
+
+### Merge 後人工驗收
+
+1. L → 0,0 → 350cm<45，終點應約 (2474.874,2474.874) mm；畫圖滑鼠移動需顯示長度、角度提示。
+2. 選 LINE 0,0→3000,0，應顯示起點／終點／中點藍色夾點；拖曳終點至 3500,0，Ctrl+Z 一次還原；中點應平移整線。
+3. 選 LINE，右側輸入 350cm 長度，原起點/角度不變，終點改為 3500,0；改角度 45°，長度保持不變。
+4. 選 CIRCLE R500，拖動半徑夾點及在右側輸入 60cm，應得到 R600；鎖層不可拖曳。
+5. POLYLINE 封閉首尾、RECT 四角、ARC 半徑／端角，以及 TEXT/INSERT 插入點應可改，不能出現零長線或寬高塌縮。
+6. F3 開 OSNAP，畫線接近圓/弧的 0°／90°／180°／270° 象限與線段垂足，應正確吸附、不能吸附隱藏／不存在曲線。
+7. 複查 v1.1.0 Space/Enter、cm 輸入／自訂快捷／繁中 IME；JSON、DXF、PLOT 出圖不要因新幾何操作受損。
+
+### 尚未完成
+
+- 游標旁可以直接鍵入長度與角度的真正多欄動態輸入面板、Grip 進階選單、多點幾何約束；弧長/角度/半徑尺寸標註（DIMENSION schema 尚未擴增）、曲線切點 OSNAP、完整 AutoCAD 插件快捷與 DWG。
+- Chromium 自動測試和 TS/Vite 通過不等於 Safari、Firefox、觸控、實際 AutoCAD GUI 或施工圖尺寸驗證已完成。
+- 後續批次可依使用者實測回饋優先加入真正動態可鍵入的 HUD、弧長/角度標註及更完整 OSNAP，協作維持使用者 Merge 一批後才繼續下一批。
+
+---
 
 ## v1.1.0 — 可編輯快捷指令、Space 確認與 mm／cm 精準輸入
 
