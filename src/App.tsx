@@ -264,7 +264,7 @@ export default function App() {
     const layer=source&&doc.layers.find(l=>l.id===source.layerId)
     if(!source||!['line','circle','rectangle','polyline','arc'].includes(source.kind)
       ||!layer?.visible||layer.locked){
-      showNotice('OFFSET：請先選取未鎖定的直線、圓、矩形或聚合線。');return
+      showNotice('OFFSET：請先選取未鎖定的直線、圓、圓弧、矩形或聚合線。');return
     }
     setOffsetMode({sourceId:source.id,distance:null});setTrimMode(null);setExtendMode(null);setCornerMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null)
@@ -336,8 +336,8 @@ export default function App() {
     setCornerMode(mode);setExtendMode(null);setOffsetMode(null);setTrimMode(null)
     setEdit(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null);setDraft(null);setTool('select')
     logMessage(mode==='fillet'
-      ?'FILLET：輸入半徑 mm（0 代表直角接合）；Enter 套用兩線圓角。'
-      :'CHAMFER：輸入兩側倒角距離「100,150」（或單值 100）；Enter 套用。')
+      ?'FILLET：輸入半徑（預設 '+preferences.inputUnit+'，亦可加 cm/mm；0 為尖角），按確認鍵套用。'
+      :'CHAMFER：輸入兩側倒角距離（預設 '+preferences.inputUnit+'），如 10cm,15cm；按確認鍵套用。')
     inputRef.current?.focus()
   }
   function finishCorner(raw:string) {
@@ -714,8 +714,8 @@ export default function App() {
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
   const title = cornerMode
-    ? cornerMode==='fillet'?'圓角半徑 mm（預設 '+filletRadius+'）'
-      :'倒角距離 mm（預設 '+chamferDistances.join(',')+'）'
+    ? cornerMode==='fillet'?'圓角半徑 '+preferences.inputUnit+'（預設 '+(filletRadius/unitToMm(preferences.inputUnit))+'）'
+      :'倒角距離 '+preferences.inputUnit+'（預設 '+chamferDistances.map(v=>v/unitToMm(preferences.inputUnit)).join(',')+'）'
     : extendMode?'點選直線欲延伸的端點，Esc 結束'
     : offsetMode
     ? offsetMode.distance===null?'輸入偏移距離（'+preferences.inputUnit+'；可輸入 30cm）':'點選偏移側或輸入 X,Y；Esc 結束'
