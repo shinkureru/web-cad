@@ -59,7 +59,7 @@ describe('v0.9.0 true ARC geometry',()=>{
    expect(hitTest(P(0,100),a)).toBeLessThan(.001)
    expect(hitTest(P(0,-100),a)).toBeGreaterThan(100)
    const snaps=entitySnaps(a)
-   expect(snaps).toHaveLength(4)
+   expect(snaps).toHaveLength(7) // 4 base grips plus three cardinal quadrant snaps
    expect(snaps[1].point.x).toBeCloseTo(-100,5)
    expect(snaps[2].point.y).toBeCloseTo(100,5)
  })
