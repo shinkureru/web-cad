@@ -1,6 +1,40 @@
 # WEB CAD — PROJECT HANDOFF
 
-更新：2026-11-18 ｜ 最新開發批次：v1.3.0 ｜ Repo：`shinkureru/web-cad`
+更新：2026-11-18 ｜ 最新開發批次：v1.4.0 ｜ Repo：`shinkureru/web-cad`
+
+## v1.4.0 — 曲線尺寸來源關聯、可同步更新與失聯保護
+
+### 最新來源、版本與工作協定
+
+- 2026-11-18 使用者要求下一批 `v1.4.0`，承接上一批預定優先項目「把 v1.3.0 的半徑／直徑／角度／弧長標註做成真正關聯來源的尺寸」；保持分批開發，每批 PR 由使用者自行 Merge，不直接修改 main。
+- 已查驗 PR #13 已 merged；從 `main` SHA `27cec260280b8a2da215520f7cd2b75147776b4e` 建立 `feat/v1.4.0-associative-dimensions`，PR **#14**。主線 `main` 沒有被直接修改。
+- package.json version 1.4.0；原生 JSON document version:1、unit mm、DXF AC1015 仍不變；使用者 v1.3.0 建立的**既有曲線尺寸繼續為快照**，新版不自動把舊圖綁到來源。
+
+### 本批技術實作
+
+- `src/cad/types.ts`：在既有 `curveDimension` 上增加可選 `sourceId?:string`（同圖來源 CIRCLE/ARC 的穩定 ID）與 `orphaned?:boolean`（來源被移除／不相容的凍結尺寸警告）。未改 CadDocument version 1；不把 DLI/DAL 謊稱為來源關聯標註。
+- `src/cad/associations.ts`：`linkCurveDimension`／`unlinkCurveDimension`／`linkCurveDimensionInDocument`／`reconcileCurveAssociations`／`copyAssociationSourceIds`。一個新的曲線標註可關聯到來源圓／原生 ARC；來源幾何半徑、圓心、ARC 起訖角度改變時自動刷新快照與 label 值。圓周距離及弧中角度差用於文字位置跟隨；若標註文字本身也在同一次 MOVE 移動，避免二次位移。
+- `src/cad/document.ts`：`documentReducer` 每次 `edit` 在加入 history 前統一調用關聯同步，因此 Grip、精確屬性、MOVE、ROTATE、TRIM 等對來源的幾何更新與所有標註只形成**一筆 Undo/Redo**。刪除來源或類型不相容時清除 `sourceId`、凍結最後尺寸、標上 `orphaned:true`；Undo 恢復原 source 和 sourceId。
+- `src/cad/document.ts` JSON schema：驗證 sourceId 必須存在且圖元類型相容（DRA/DDI 可連 CIRCLE/ARC，DAN/DAR 僅可連 ARC）；拒絕損壞／不相容來源 ID，並在載入時依實際來源修復外部修改後脫節的量測資料，不更動舊版無來源 ID 的快照。
+- `src/App.tsx`：新建 DRA／DDI／DAN／DAR 預設勾選「建立後自動追蹤來源（推薦）」；可取消改用獨立快照。選取 curveDimension 右側顯示目前量測、來源 ID、解除關聯按鈕；兩物件 Shift 同選來源＋尺寸時有「重新關聯」按鈕。失聯時顯示醒目的「來源已刪除或變得不相容」提醒，不讓過時快照默認可信。
+- `src/App.tsx` COPY：若同時複製來源圓／ARC 與標註，複製的標註會使用**複製來源的 ID**；只複製標註仍可追蹤舊來源。MOVE 同時選來源／標註、單獨 MOVE 標註時，幾何量測圓心仍固定於來源，不重複平移。
+- `src/cad/plot.ts`：PLOT／SVG 依已同步的真幾何渲染，若圖中有可見 `orphaned` 標註，輸出面板提示幾個來源失聯快照，需人工複核再施工。
+- `src/cad/dxf.ts`：如 v1.3.0 一樣使用可見 LINE/ARC/LWPOLYLINE/TEXT 展開 `curveDimension`；新版對 `sourceId` 或 `orphaned` 顯示額外明確損失／凍結警告。重新匯入 DXF 不會恢復來源關聯、也不宣稱 AutoCAD 原生 DIMRADIUS/DIMANGULAR/DIMARC 往返。
+- `src/styles.css`：獨立狀態／重新關聯按鈕，連動成功與失聯狀態視覺區分；README、docs/ASSOCIATIVE_DIMENSIONS.md、docs/CURVE_DIMENSIONS.md 更新。
+
+### 測試、CI 與驗收清單
+
+- `src/cad/associations.test.ts`：新增 **17 項**，涵蓋來源半徑／直徑／平移／ARC 角度與弧長更新；獨立標註移動、來源＋標註一起 MOVE、不重複平移；刪來源、ARC 類型變更凍結＋Undo／Redo；成組 COPY 來源重指向、新舊標註手動重連；非法來源參照、鎖圖層拒絕；JSON reload 自校正；PLOT 與 DXF 明確警告。
+- `e2e/cad.spec.ts` 新增 **5 條 Chromium 真瀏覽器測試**：DRA +「精確半徑」改 60cm 即同步 R600 + Undo/Redo + 刷新保存；刪來源變 orphan + Undo；取消勾選保留快照；ARC DAN/DAR 改終角同步更新；選尺寸解除關聯、Shift 選來源重新關聯。對 seed helper 修復重整頁面會重新覆寫圖面的測試污染。
+- 預計總 Vitest **178／178**、Chromium Playwright **19／19**，以 PR #14 **最終 HEAD** 的 GitHub Actions Build, test and deploy 與 Chromium browser E2E 成功為準。源碼修改後 DXF ezdxf、PLOT PDF 實體尺寸 smoke 也應通過才 Merge。
+- 人工驗收：CIRCLE R500 + DRA/DDI → 右側改 R600 時 R600／Ø1200；一次 Ctrl+Z 一起回復；來源 ARC R500、0°→180° 改終角 90°，DAN=90°、DAR≈⌒785；複製來源＋尺寸，新關聯應只跟新來源；刪來源出 orphan 警告；解除關聯後來源改動不影響舊快照；Shift 重新關聯；JSON 儲存重開有效；DXF 顯示損失警告、PLOT 顯示失聯警告。
+- **人工測試仍必要**：真 AutoCAD/QCAD/LibreCAD、Safari/Firefox/手機、中文字型、施工圖實體輸出尚未全面驗證；不能以綠燈當作正式施工圖精度認證。
+
+### v1.5.0 建議下一步
+
+- 線性 DLI/DAL 的端點與來源圖元關聯、更多正交／幾何約束與關聯式多段線；兩條 LINE 夾角 DIMANGULAR、真原生 DXF DIMENSION 往返、LWPOLYLINE bulge 和高階 CAD 工具。依使用者 merge 後回饋決定下一批，繼續獨立 PR。
+
+---
 
 ## v1.3.0 — 可鍵入的動態 HUD 與半徑、直徑、圓弧角度／弧長尺寸標註
 

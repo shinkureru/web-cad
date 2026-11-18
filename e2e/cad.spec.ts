@@ -19,7 +19,13 @@ const drawing=(entities:TestEntity[])=>({
 })
 async function seed(page:Page,entities:TestEntity[]){
   await page.addInitScript(([key,content]:[string,string])=>{
-    localStorage.setItem(key,content)
+    // Seed only once per tab. Re-injecting on reload masks real persistence
+    // regressions and overwrites the document under test.
+    const marker='webcad:e2e:seeded'
+    if(sessionStorage.getItem(marker)!=='1'){
+      localStorage.setItem(key,content)
+      sessionStorage.setItem(marker,'1')
+    }
   },[STORAGE,JSON.stringify(drawing(entities))])
 }
 async function sendCommand(page:Page,command:string){
@@ -57,7 +63,7 @@ async function dragWorld(page:Page,x1:number,y1:number,x2:number,y2:number){
 }
 test('real command-line LINE creation, Undo/Redo, native JSON download and refresh persistence',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.4.0')
   await expect(page.locator('canvas.cad-canvas')).toBeVisible()
   await sendCommand(page,'L')
   await sendCommand(page,'0,0')
@@ -96,7 +102,7 @@ test('actual Canvas drag: L→R enclosed, R→L crossing, batch MOVE and Undo',a
       start:{x:3200,y:1650},end:{x:3600,y:1650}},
   ])
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.4.0')
   await dragWorld(page,2100,1400,2700,1700)
   await expect(page.locator('.console-history')).toContainText('框選：1 個')
   await dragWorld(page,2700,1400,2100,1700)
@@ -172,7 +178,7 @@ test('ARC created from three command points survives JSON storage and SVG plot U
 
 test('v1.1.0 accepts Space as CAD confirmation and exact explicit centimetres',async({page})=>{
   await page.goto('/')
-  await expect(page.locator('.menu-bar')).toContainText('v1.3.0')
+  await expect(page.locator('.menu-bar')).toContainText('v1.4.0')
   const input=page.getByRole('textbox',{name:'CAD 指令輸入'})
   await input.fill('L')
   await input.press('Space')
@@ -363,4 +369,124 @@ test('v1.3.0 ARC length and angular commands create calculated snapshot labels',
     startAngle:0,endAngle:180
   })
   await expect(page.locator('.info-block')).toContainText('180°')
+})
+
+
+test('v1.4.0 linked R annotation follows real inspector edits and one-step Undo/Redo',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const rim=await canvasWorld(page,2900,1500)
+  await page.mouse.click(rim.x,rim.y)
+  await expect(page.getByRole('checkbox',{name:'新標註自動關聯來源'})).toBeChecked()
+  await sendCommand(page,'DRA')
+  await sendCommand(page,'2950,2100')
+  await waitEntities(page,2)
+  expect((await saved(page)).entities[1]).toMatchObject({
+    kind:'curveDimension',sourceId:'source-circle',radius:500,orphaned:false
+  })
+  await expect(page.getByRole('region',{name:'曲線標註關聯狀態'}))
+    .toContainText('已關聯來源')
+  await page.mouse.click(rim.x,rim.y)
+  const radius=page.getByRole('textbox',{name:'精確半徑'})
+  await expect(radius).toBeVisible()
+  await radius.fill('60cm');await radius.press('Enter')
+  await expect.poll(async()=>((await saved(page)).entities[1].radius as number)).toBe(600)
+  expect((await saved(page)).entities[0]).toMatchObject({radius:600})
+  expect((await saved(page)).entities[1]).toMatchObject({sourceId:'source-circle'})
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await expect.poll(async()=>((await saved(page)).entities[1].radius as number)).toBe(500)
+  expect((await saved(page)).entities[0]).toMatchObject({radius:500})
+  await page.locator('button[title="重做 Ctrl+Y"]').click()
+  await expect.poll(async()=>((await saved(page)).entities[1].radius as number)).toBe(600)
+  await page.reload()
+  expect((await saved(page)).entities[1]).toMatchObject({sourceId:'source-circle',radius:600})
+})
+test('v1.4.0 deleting a linked source freezes label and Undo restores link',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const rim=await canvasWorld(page,2900,1500)
+  await page.mouse.click(rim.x,rim.y)
+  await sendCommand(page,'DRA')
+  await sendCommand(page,'2900,2300')
+  await waitEntities(page,2)
+  await page.mouse.click(rim.x,rim.y)
+  await sendCommand(page,'E')
+  await waitEntities(page,1)
+  expect((await saved(page)).entities[0]).toMatchObject({
+    kind:'curveDimension',radius:500,orphaned:true
+  })
+  expect((await saved(page)).entities[0].sourceId).toBeUndefined()
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await waitEntities(page,2)
+  expect((await saved(page)).entities[1]).toMatchObject({
+    kind:'curveDimension',sourceId:'source-circle',radius:500
+  })
+})
+test('v1.4.0 snapshot opt-out and explicit detach preserve measurements',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const rim=await canvasWorld(page,2900,1500)
+  await page.mouse.click(rim.x,rim.y)
+  const optIn=page.getByRole('checkbox',{name:'新標註自動關聯來源'})
+  await optIn.uncheck()
+  await sendCommand(page,'DRA')
+  await sendCommand(page,'2950,2150')
+  await waitEntities(page,2)
+  expect((await saved(page)).entities[1].sourceId).toBeUndefined()
+  await expect(page.getByRole('region',{name:'曲線標註關聯狀態'}))
+    .toContainText('獨立尺寸快照')
+  await page.mouse.click(rim.x,rim.y)
+  const radius=page.getByRole('textbox',{name:'精確半徑'})
+  await radius.fill('60cm');await radius.press('Enter')
+  await expect.poll(async()=>((await saved(page)).entities[0].radius as number)).toBe(600)
+  expect((await saved(page)).entities[1].radius).toBe(500)
+})
+test('v1.4.0 ARC angle and length source changes synchronize linked annotations',async({page})=>{
+  await seed(page,[{id:'source-arc',kind:'arc',layerId:'wall',
+    center:{x:2400,y:1500},radius:500,startAngle:0,endAngle:180}])
+  await page.goto('/')
+  const top=await canvasWorld(page,2400,2000)
+  await page.mouse.click(top.x,top.y)
+  await sendCommand(page,'DAR')
+  await sendCommand(page,'2400,2300')
+  await waitEntities(page,2)
+  await page.mouse.click(top.x,top.y)
+  await sendCommand(page,'DAN')
+  await sendCommand(page,'2400,2500')
+  await waitEntities(page,3)
+  expect((await saved(page)).entities[1]).toMatchObject({sourceId:'source-arc',measure:'arcLength',radius:500})
+  expect((await saved(page)).entities[2]).toMatchObject({sourceId:'source-arc',measure:'angle'})
+  await page.mouse.click(top.x,top.y)
+  const end=page.getByRole('spinbutton',{name:'圓弧結束角度'})
+  await end.fill('90')
+  await end.press('Tab')
+  await expect.poll(async()=>((await saved(page)).entities[2].endAngle as number)).toBe(90)
+  expect((await saved(page)).entities[1]).toMatchObject({radius:500,startAngle:0,endAngle:90})
+  await page.locator('button[title="復原 Ctrl+Z"]').click()
+  await expect.poll(async()=>((await saved(page)).entities[2].endAngle as number)).toBe(180)
+})
+
+
+test('v1.4.0 GUI detaches then Shift-pair re-links the exact curve source',async({page})=>{
+  await seed(page,[{id:'source-circle',kind:'circle',layerId:'wall',
+    center:{x:2400,y:1500},radius:500}])
+  await page.goto('/')
+  const rim=await canvasWorld(page,2900,1500)
+  await page.mouse.click(rim.x,rim.y)
+  await sendCommand(page,'DRA')
+  await sendCommand(page,'2950,2150')
+  await waitEntities(page,2)
+  await expect(page.getByRole('button',{name:'解除所選尺寸關聯'})).toBeVisible()
+  await page.getByRole('button',{name:'解除所選尺寸關聯'}).click()
+  await expect.poll(async()=>((await saved(page)).entities[1].sourceId)).toBeUndefined()
+  await page.keyboard.down('Shift')
+  await page.mouse.click(rim.x,rim.y)
+  await page.keyboard.up('Shift')
+  await expect(page.getByRole('button',{name:'關聯所選曲線與尺寸標註'})).toBeVisible()
+  await page.getByRole('button',{name:'關聯所選曲線與尺寸標註'}).click()
+  await expect.poll(async()=>((await saved(page)).entities[1].sourceId)).toBe('source-circle')
+  await expect(page.getByRole('region',{name:'曲線標註關聯狀態'})).toContainText('已關聯來源')
 })

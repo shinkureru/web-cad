@@ -23,6 +23,7 @@ import type { CornerMode } from './cad/advancedEditing'
 import { wallOutline } from './cad/walls'
 import { DEFAULT_DIMENSION_STYLES, entityExtentPoints, getDimensionStyle } from './cad/annotations'
 import { makeCurveDimension,curveDimensionExtents,curveDimensionPicture } from './cad/curveDimensions'
+import { copyAssociationSourceIds,linkCurveDimension,linkCurveDimensionInDocument,unlinkCurveDimension } from './cad/associations'
 import { exportDxf, importDxf } from './cad/dxf'
 import { arcFromThreePoints, arcExtents, arcSweep, normalizeAngle } from './cad/arcs'
 import { BUILTIN_BLOCKS, createBlockFromSelection, expandedDrawing, explodeInsert, installPreset } from './cad/blocks'
@@ -114,6 +115,7 @@ export default function App() {
   const [activeBlockId, setActiveBlockId] = useState<string>('')
   const [annotation, setAnnotation] = useState<{kind:'text'|DimensionMode; text:string; points:Point[]} | null>(null)
   const [curveAnnotation,setCurveAnnotation] = useState<{measure:CurveMeasure;sourceId:string}|null>(null)
+  const [linkNewDimensions,setLinkNewDimensions]=useState(true)
   const [newTextHeight, setNewTextHeight] = useState(150)
   const [grid, setGrid] = useState(true)
   const [osnap, setOsnap] = useState(true)
@@ -122,7 +124,7 @@ export default function App() {
   const [commandText, setCommandText] = useState('')
   const [preferences, setPreferences] = useState<CadPreferences>(loadPreferences)
   const [settingsOpen,setSettingsOpen]=useState(false)
-  const [log, setLog] = useState<string[]>(['Web CAD v1.3.0：可直接輸入的動態尺寸 HUD，新增 R／Ø／圓弧角度／弧長標註。'])
+  const [log, setLog] = useState<string[]>(['Web CAD v1.4.0：曲線尺寸關聯來源、自動更新、解除／重新關聯及來源遺失警告。'])
   const [panelOpen, setPanelOpen] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
   const [plotOpen, setPlotOpen] = useState(false)
@@ -243,12 +245,37 @@ export default function App() {
     const source=doc.entities.find(e=>e.id===curveAnnotation.sourceId)
     if(!source){setCurveAnnotation(null);showNotice('來源圓或圓弧已不存在。');return}
     try{
-      const item=makeCurveDimension(source,curveAnnotation.measure,point,uid(),
+      const created=makeCurveDimension(source,curveAnnotation.measure,point,uid(),
         doc.activeLayerId,doc.activeDimensionStyleId??'standard')
+      const item=linkNewDimensions?linkCurveDimension(created,source):created
       editDoc(d=>({...d,entities:[...d.entities,item]}))
       setCurveAnnotation(null);selectSingle(item.id)
-      logMessage('已新增 '+curveAnnotation.measure+' 原生曲線標註（幾何快照，非關聯式）。')
+      logMessage('已新增 '+curveAnnotation.measure+(linkNewDimensions
+        ?' 關聯式尺寸標註；來源修改時自動更新。':' 幾何快照標註（不會自動更新）。'))
     }catch(error){showNotice(error instanceof Error?error.message:'無法建立曲線標註')}
+  }
+  function detachSelectedCurveDimension(){
+    const entity=doc.entities.find(e=>e.id===selectedId)
+    if(entity?.kind!=='curveDimension'||!entity.sourceId)return
+    const layer=doc.layers.find(l=>l.id===entity.layerId)
+    if(!layer?.visible||layer.locked){showNotice('標註所在圖層已鎖定或隱藏。');return}
+    const frozen=unlinkCurveDimension(entity)
+    editDoc(d=>({...d,entities:d.entities.map(e=>e.id===entity.id?frozen:e)}))
+    logMessage('已解除曲線尺寸來源關聯；目前數值凍結為快照。')
+  }
+  function relinkSelectedCurveDimension(){
+    if(selectedIds.length!==2){showNotice('請 Shift 選取一個曲線標註和一個 CIRCLE／ARC。');return}
+    const chosen=doc.entities.filter(e=>selectedIds.includes(e.id))
+    const dim=chosen.find(e=>e.kind==='curveDimension')
+    const source=chosen.find(e=>e.kind==='circle'||e.kind==='arc')
+    if(dim?.kind!=='curveDimension'||!source){
+      showNotice('重新關聯需要恰好一個曲線標註和一個來源圓／圓弧。');return
+    }
+    try{
+      const updated=linkCurveDimensionInDocument(doc,dim.id,source.id)
+      editDoc(()=>updated);selectSingle(dim.id)
+      logMessage('已重新關聯尺寸標註與曲線；現在會追蹤來源圖元。')
+    }catch(error){showNotice(error instanceof Error?error.message:'重新關聯失敗')}
   }
   function startAnnotation(kind:'text'|DimensionMode) {
     const layer=doc.layers.find(l=>l.id===doc.activeLayerId)
@@ -434,7 +461,8 @@ export default function App() {
     const transformed=sources.map(e=>edit.kind==='rotate'
       ? rotateEntity(e,edit.base!,angle):translateEntity(e,offset))
     if(edit.kind==='copy'){
-      const clones=transformed.map(e=>({...e,id:uid()}))
+      const rawClones=transformed.map(e=>({...e,id:uid()}))
+      const clones=copyAssociationSourceIds(rawClones,sources.map(e=>e.id))
       editDoc(current=>({...current,entities:[...current.entities,...clones]}))
       setSelectedIds(clones.map(e=>e.id));setSelectedId(clones.at(-1)?.id??null)
     }else{
@@ -781,6 +809,10 @@ export default function App() {
       id, name: `圖層 ${current.layers.length}`, color: '#7db5e9', lineweight: .25, linetype: 'continuous', visible: true, locked: false,
     }] }))
   }
+  const selectedPair=selectedIds.length===2?doc.entities.filter(e=>selectedIds.includes(e.id)):[]
+  const canRelinkSelected=selectedPair.length===2&&
+    selectedPair.some(e=>e.kind==='curveDimension')&&
+    selectedPair.some(e=>e.kind==='circle'||e.kind==='arc')
   const selectedEntity = doc.entities.find(e => e.id === selectedId)
   const selectedLayer = doc.layers.find(l => l.id === selectedEntity?.layerId)
   const layer = doc.layers.find(l => l.id === doc.activeLayerId)
@@ -812,7 +844,7 @@ export default function App() {
         <input ref={fileRef} type="file" accept=".dxf,.json,.webcad.json,application/json,application/dxf" hidden onChange={e => { void importFile(e.target.files?.[0]); e.currentTarget.value = '' }}/>
       </div>
     </header>
-    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.3.0</span></div>
+    <div className="menu-bar"><span className="menu-active">繪圖工作區</span><span>模型空間</span><span className="menu-spacer"/><span className="prototype-indicator"><span className="prototype-dot"/> PROTOTYPE</span><span>v1.4.0</span></div>
     <div className="editor">
       <aside className="tool-rail">
         <div className="rail-heading">工具</div>
@@ -895,6 +927,9 @@ export default function App() {
         </div>
         <div className="panel-divider"/>
         <div className="panel-section-heading"><span><MousePointer2 size={17}/> 物件資訊</span></div>
+        {canRelinkSelected&&<button className="association-relink-button"
+          aria-label="關聯所選曲線與尺寸標註"
+          onClick={relinkSelectedCurveDimension}>重新關聯：所選曲線＋尺寸標註</button>}
         <div className="info-block">{selectedEntity ? <>
           <p>類型　{({ line: '直線', polyline: '聚合線', rectangle: '矩形', circle: '圓形', arc: '圓弧', insert: '圖塊參照', text: '文字', dimension: '尺寸標註', curveDimension:'曲線尺寸標註' } as Record<string, string>)[selectedEntity.kind]}</p>
           <p>ID　{selectedEntity.id.slice(0, 8)}　{selectedLayer?.locked ? '（已鎖定）' : ''}</p>
@@ -903,7 +938,12 @@ export default function App() {
             onCommit={finishGeometryEdit}/>}
           {(selectedEntity.kind==='circle'||selectedEntity.kind==='arc') &&
             <section className="curve-dimension-actions" aria-label="圓形與圓弧尺寸標註">
-              <p>曲線標註（非關聯式快照）</p>
+              <p>曲線尺寸標註</p>
+              <label className="association-checkbox"><input
+                type="checkbox" aria-label="新標註自動關聯來源"
+                checked={linkNewDimensions} onChange={e=>setLinkNewDimensions(e.target.checked)}/>
+                建立後自動追蹤來源（推薦）
+              </label>
               <div>
                 <button onClick={()=>startCurveAnnotation('radius')}>DRA 半徑 R</button>
                 <button onClick={()=>startCurveAnnotation('diameter')}>DDI 直徑 Ø</button>
@@ -913,11 +953,20 @@ export default function App() {
                 </>}
               </div>
             </section>}
-          {selectedEntity.kind==='curveDimension'&&<p>
-            測量快照：{curveDimensionPicture(selectedEntity,
-              getDimensionStyle(doc,selectedEntity.styleId)).label.text}
-            （來源幾何修改後不自動更新）
-          </p>}
+          {selectedEntity.kind==='curveDimension'&&<section className="association-status"
+            aria-label="曲線標註關聯狀態">
+            <p>尺寸值：{curveDimensionPicture(selectedEntity,
+              getDimensionStyle(doc,selectedEntity.styleId)).label.text}</p>
+            {selectedEntity.sourceId?
+              <><p className="association-ok">已關聯來源：{selectedEntity.sourceId.slice(0,8)}（更新來源時自動重算）</p>
+                <button disabled={selectedLayer?.locked||!selectedLayer?.visible}
+                  aria-label="解除所選尺寸關聯" onClick={detachSelectedCurveDimension}>
+                  解除關聯，保留目前尺寸
+                </button></>:
+              selectedEntity.orphaned?
+                <p role="alert" className="association-warning">來源已刪除或變得不相容：尺寸已凍結，請重新量測或 Shift 選來源重新關聯。</p>:
+                <p>獨立尺寸快照：不隨來源修改而更新。可 Shift 同時選取來源圖形並重新關聯。</p>}
+          </section>}
           {selectedEntity.kind==='arc' && <div className="annotation-entity-controls">
             <label>起始角度（°）<input type="number" aria-label="圓弧起始角度" step={1}
               value={selectedEntity.startAngle} disabled={selectedLayer?.locked||!selectedLayer?.visible}
@@ -1027,7 +1076,7 @@ export default function App() {
     <footer className="status-bar"><div className="status-coordinates"><span className="status-mini-label">座標</span> X {(cursor.x/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)} <span className="status-sep">·</span> Y {(cursor.y/unitToMm(preferences.inputUnit)).toFixed(preferences.inputUnit==='cm'?2:1)}</div><div className="status-spacer"/><span>圖元 {doc.entities.length}</span><span className="status-sep">|</span><span>比例 {(camera.scale * 100).toFixed(1)}%</span><span className="status-sep">|</span><span className="unit-tag">輸入 {preferences.inputUnit==='cm'?'公分 cm':'毫米 mm'} ／ 模型 mm</span><span className="status-sep">|</span><span>MODEL</span><span className="connection-tag"><span/> LOCAL</span></footer>
     {plotOpen && <PlotDialog doc={doc} onClose={() => setPlotOpen(false)}/>} 
     {settingsOpen && <CadSettingsDialog preferences={preferences} onApply={setPreferences} onClose={() => setSettingsOpen(false)}/>}
-    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.3.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
+    {helpOpen && <div className="modal-backdrop" onClick={() => setHelpOpen(false)}><div className="help-modal" role="dialog" aria-modal="true" aria-label="操作與指令說明" onClick={e => e.stopPropagation()}><div className="help-head"><div><h2>快捷指令與操作</h2><p>WEB CAD / v1.4.0</p></div><button onClick={() => setHelpOpen(false)} aria-label="關閉說明">✕</button></div><div className="help-grid">{[
       ['EX / EXTEND', '先選一個或多個邊界 → EX → 點擊目標直線靠近欲延伸端點的位置'],
       ['F / FILLET', '先選兩條直線 → F → 輸入半徑（mm），0 為尖角；圓角是原生 ARC，可編輯半徑與角度'],
       ['CHA / CHAMFER', '先選兩條直線 → CHA → 輸入 100,150 等兩側倒角距離'],
@@ -1041,6 +1090,8 @@ export default function App() {
       ['T / TEXT', '輸入繁體中文文字 → 指定插入點'], ['DLI / DIMLINEAR', '兩點 → 尺寸線位置（水平或垂直）'],
       ['DAL / DIMALIGNED', '兩點 → 尺寸線位置（實際長度）'], ['D / DIMSTYLE', '打開右側標註樣式設定'],
       ['DRA / DDI', '先選取單一圓或圓弧 → DRA 半徑、DDI 直徑 → 指定標註文字位置'],
+      ['關聯式曲線尺寸', 'v1.4.0 預設建立關聯尺寸；來源半徑、圓心或弧角變更，標註自動更新並可一起 Undo'],
+      ['解除／重新關聯', '選取標註可解除關聯；Shift 選取來源曲線和曲線尺寸標註可重新關聯；來源刪除後數值凍結并顯示警告'],
       ['DAN / DAR', '先選取單一 ARC → DAN 圓弧角度、DAR 圓弧長度 → 點選尺寸線位置；此版為幾何快照'],
       ['動態尺寸 HUD', 'L / PL 指定第一點後，可按 Tab 或 F2 進入游標旁輸入框，設定長度與角度，再按確認鍵套用'],
       ['動態尺寸輸入', '指定起點後，移動滑鼠可看到長度／角度；輸入 350cm<45 或 350cm 直接精確繪製'],

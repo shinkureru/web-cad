@@ -116,6 +116,9 @@ export function buildPlot(doc:CadDocument,options:PlotOptions):PlotResult{
     && actual.minY>=bounds.minY-1e-6 && actual.maxY<=bounds.maxY+1e-6
   const warnings:string[]=[]
   if(!fits)warnings.push('目前選擇的固定比例超過圖框有效繪圖區域。請更改紙張方向、尺寸或比例；本版禁止截斷出圖。')
+  const stale=doc.entities.filter(e=>e.kind==='curveDimension'&&e.orphaned&&
+    doc.layers.find(l=>l.id===e.layerId)?.visible).length
+  if(stale)warnings.push('注意：有 '+stale+' 個來源已遺失的曲線尺寸標註，保留的是凍結數值。請先重新量測再使用施工圖。')
   const lines:string[]=[]
   const tx=(x:number)=>n(drawingArea.x+(x-bounds.minX)/opts.scale)
   const ty=(y:number)=>n(drawingArea.y+(bounds.maxY-y)/opts.scale)

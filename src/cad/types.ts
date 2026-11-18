@@ -28,13 +28,17 @@ export interface DimensionEntity extends EntityBase {
   kind: 'dimension'; start: Point; end: Point; placement: Point; mode: DimensionMode
   axis: DimensionAxis; styleId: string
 }
-/** Snapshot dimensions for a circular source. Existing source geometry is not associative. */
+/** Circular dimension: legacy v1.3 snapshots stay standalone; v1.4 may link a source. */
 export type CurveMeasure = 'radius' | 'diameter' | 'arcLength' | 'angle'
 export interface CurveDimensionEntity extends EntityBase {
   kind:'curveDimension'; measure:CurveMeasure
   center:Point; radius:number; placement:Point; styleId:string
   /** Required only for arcLength or angle; CCW model degrees. */
   startAngle?:number; endAngle?:number
+  /** The original CIRCLE/ARC ID; linked dimensions track all geometric edits. */
+  sourceId?:string
+  /** Frozen snapshot because its source was deleted or became incompatible. */
+  orphaned?:boolean
 }
 export type CadDisplayEntity = CadPrimitive | TextEntity | DimensionEntity | CurveDimensionEntity
 export type CadEntity = CadDisplayEntity | InsertEntity

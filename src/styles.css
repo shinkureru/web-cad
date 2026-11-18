@@ -192,3 +192,20 @@ padding:5px 7px;font-size:11px;height:29px;border-radius:4px}
 .curve-dimension-actions button:hover{background:#355577}
 @media(max-width:630px){.dynamic-hud{min-width:190px;max-width:210px;padding:6px;gap:3px}
 .dynamic-hud input,.dynamic-hud button{height:27px;font-size:10px}}
+
+/* v1.4.0 associative dimension status / re-link controls */
+.association-checkbox{display:flex;align-items:center;gap:8px;margin:8px 0 12px;
+  font-size:11px;color:#c6d7e9;cursor:pointer;line-height:1.5}
+.association-checkbox input{accent-color:#74bdff;width:15px;height:15px;flex:none}
+.association-status{padding:10px;margin:10px 0;border:1px solid #364d63;
+  border-radius:7px;background:#182738}
+.association-status p{font-size:11px;color:#bcd1e4;line-height:1.6;margin:5px 0}
+.association-status .association-ok{color:#8bd7c2}
+.association-status .association-warning{color:#ffd3a7;border-left:3px solid #e8a96b;
+  padding-left:8px}
+.association-status button,.association-relink-button{border:1px solid #527591;
+  color:#e4f0fd;background:#2b4660;border-radius:5px;font-size:11px;
+  padding:7px 9px;line-height:1.5;min-height:34px}
+.association-status button:hover:not(:disabled),.association-relink-button:hover{background:#365979}
+.association-status button:disabled{opacity:.45}
+.association-relink-button{width:100%;margin:3px 0 9px}
