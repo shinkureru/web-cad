@@ -1,6 +1,6 @@
 import { distance, entitySegments, roundPoint, segmentCircleIntersections, segmentIntersection } from './geometry'
 import { expandEntity } from './blocks'
-import { arcSegmentIntersections, trimArc } from './arcs'
+import { arcSegmentIntersections, trimArc, trimCircle } from './arcs'
 import type { CadDocument, CadEntity, CadPrimitive, LineEntity, Point, PolylineEntity } from './types'
 
 /**
@@ -213,8 +213,8 @@ export function trimDocument(doc:CadDocument,boundaryIds:string[],targetId:strin
   const target=doc.entities.find(e=>e.id===targetId)
   if(!target)throw new Error('找不到要修剪的目標。')
   layerEditable(doc,target)
-  if(target.kind!=='line'&&target.kind!=='polyline'&&target.kind!=='arc')
-    throw new Error('TRIM 目前只能修剪直線、開放聚合線或 ARC 圓弧。')
+  if(target.kind!=='line'&&target.kind!=='polyline'&&target.kind!=='arc'&&target.kind!=='circle')
+    throw new Error('TRIM 目前只能修剪直線、開放聚合線、ARC 圓弧或完整 CIRCLE。')
   const cutterEntities=boundaryIds.map(id=>doc.entities.find(e=>e.id===id))
   if(cutterEntities.some(e=>!e))throw new Error('裁切邊界已不存在。')
   const cutters:CadPrimitive[]=[]
@@ -225,6 +225,8 @@ export function trimDocument(doc:CadDocument,boundaryIds:string[],targetId:strin
       ['line','polyline','rectangle','circle','arc'].includes(item.kind)))
   }
   if(!cutters.length)throw new Error('裁切邊界必須含直線、圓、矩形或聚合線。')
-  const remains=target.kind==='arc'?trimArc(target,cutters,click,newId):trimParts(target,cutters,click,newId)
+  const remains=target.kind==='arc'?trimArc(target,cutters,click,newId)
+    :target.kind==='circle'?trimCircle(target,cutters,click)
+    :trimParts(target,cutters,click,newId)
   return {...doc,entities:doc.entities.flatMap(e=>e.id===target.id?remains:[e])}
 }
