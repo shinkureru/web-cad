@@ -354,35 +354,46 @@ export default function App() {
     logMessage(next === 'select' ? '選取物件，按 Delete 刪除。' : `${tools.find(t => t.id === next)?.label}：指定第一點。`)
   }
   function startEdit(kind: EditTool) {
-    const entity = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = entity && doc.layers.find(l => l.id === entity.layerId)
-    if (!entity || !sourceLayer?.visible || sourceLayer.locked) {
-      showNotice('請先選取可編輯的物件（圖層須顯示且未鎖定）。'); return
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const entities=doc.entities.filter(e=>ids.includes(e.id))
+    if(!ids.length||entities.length!==ids.length||entities.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){
+      showNotice('MOVE/COPY/ROTATE：請先選取一個或多個未鎖定的可見物件。');return
     }
-    setTool('select'); setDraft(null); setBlockCreate(null); setBlockInsert(null); setAnnotation(null);setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
-    setEdit({ kind, base: null })
-    logMessage(`${editTools.find(t => t.id === kind)?.label}：指定基準點。`)
+    setTool('select');setDraft(null);setBlockCreate(null);setBlockInsert(null);setAnnotation(null)
+    setOffsetMode(null);setTrimMode(null);setExtendMode(null);setCornerMode(null)
+    setEdit({kind,base:null})
+    logMessage((editTools.find(t=>t.id===kind)?.label??kind)+'：已選 '+ids.length+' 個物件，指定基準點。')
   }
-  function finishEdit(point: Point, degrees?: number) {
-    if (!edit || !selectedId) return
-    if (!edit.base) {
-      setEdit({ ...edit, base: point })
-      logMessage(edit.kind === 'rotate' ? '旋轉：指定角度（度），或點選方向。' : '指定第二點（可以輸入 @3000,0）。')
+  function finishEdit(point:Point,degrees?:number){
+    if(!edit)return
+    if(!edit.base){
+      setEdit({...edit,base:point})
+      logMessage(edit.kind==='rotate'?'指定旋轉角度（度）或點選方向。':'指定第二點，例如 @3000,0。')
       return
     }
-    const source = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = source && doc.layers.find(l => l.id === source.layerId)
-    if (!source || !sourceLayer?.visible || sourceLayer.locked) { setEdit(null); showNotice('物件已不存在或圖層已鎖定。'); return }
-    const angle = degrees ?? Math.atan2(point.y - edit.base.y, point.x - edit.base.x) * 180 / Math.PI
-    const offset = { x: point.x - edit.base.x, y: point.y - edit.base.y }
-    const result = edit.kind === 'rotate' ? rotateEntity(source, edit.base, angle) : translateEntity(source, offset)
-    if (edit.kind === 'copy') {
-      const clone = { ...result, id: uid() }
-      editDoc(current => ({ ...current, entities: [...current.entities, clone] }))
-      selectSingle(clone.id)
-    } else editDoc(current => ({ ...current, entities: current.entities.map(e => e.id === source.id ? result : e) }))
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const sources=doc.entities.filter(e=>ids.includes(e.id))
+    if(!sources.length||sources.length!==ids.length||sources.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){setEdit(null);showNotice('其中一個物件已不存在，或圖層已鎖定。');return}
+    const angle=degrees??Math.atan2(point.y-edit.base.y,point.x-edit.base.x)*180/Math.PI
+    const offset={x:point.x-edit.base.x,y:point.y-edit.base.y}
+    const transformed=sources.map(e=>edit.kind==='rotate'
+      ? rotateEntity(e,edit.base!,angle):translateEntity(e,offset))
+    if(edit.kind==='copy'){
+      const clones=transformed.map(e=>({...e,id:uid()}))
+      editDoc(current=>({...current,entities:[...current.entities,...clones]}))
+      setSelectedIds(clones.map(e=>e.id));setSelectedId(clones.at(-1)?.id??null)
+    }else{
+      const byId=new Map(transformed.map(e=>[e.id,e]))
+      editDoc(current=>({...current,entities:current.entities.map(e=>byId.get(e.id)??e)}))
+    }
     setEdit(null)
-    logMessage(`${editTools.find(t => t.id === edit.kind)?.label}完成。`)
+    logMessage((editTools.find(t=>t.id===edit.kind)?.label??edit.kind)+'完成：'+sources.length+' 個物件。')
   }
   function editSelectedEntity(changes: Partial<Pick<CadEntity, 'layerId' | 'color' | 'lineweight' | 'linetype'>>) {
     if (!selectedId) return
@@ -421,13 +432,19 @@ export default function App() {
     editDoc(current => ({ ...current, entities: [...current.entities, entity] }))
     setDraft(null); logMessage('聚合線已完成。')
   }
-  function deleteSelected() {
-    if (!selectedId) { showNotice('請先選取物件。'); return }
-    const source = doc.entities.find(e => e.id === selectedId)
-    const sourceLayer = source && doc.layers.find(l => l.id === source.layerId)
-    if (!sourceLayer?.visible || sourceLayer.locked) { showNotice('此物件所在圖層無法編輯。'); return }
-    editDoc(current => ({ ...current, entities: current.entities.filter(e => e.id !== selectedId) }))
-    selectSingle(null); logMessage('已刪除所選物件。')
+  function deleteSelected(){
+    const ids=selectedIds.length?selectedIds:(selectedId?[selectedId]:[])
+    const entities=doc.entities.filter(e=>ids.includes(e.id))
+    if(!ids.length||entities.length!==ids.length){
+      showNotice('請先選取要刪除的物件。');return
+    }
+    if(entities.some(e=>{
+      const layer=doc.layers.find(l=>l.id===e.layerId)
+      return !layer?.visible||layer.locked
+    })){showNotice('含有已鎖定或隱藏的圖層，無法整批刪除。');return}
+    const set=new Set(ids)
+    editDoc(current=>({...current,entities:current.entities.filter(e=>!set.has(e.id))}))
+    selectSingle(null);logMessage('已刪除 '+ids.length+' 個所選物件。')
   }
   function fitView() {
     if (!doc.entities.length) { setCamera({ x: 0, y: 0, scale: .2 }); return }
@@ -554,6 +571,16 @@ export default function App() {
       const target = ev.target as HTMLElement | null
       const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT'
       if (ev.isComposing) return
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a' && !editing) {
+        ev.preventDefault()
+        const ids=doc.entities.filter(e=>{
+          const l=doc.layers.find(layer=>layer.id===e.layerId)
+          return l?.visible && !l.locked
+        }).map(e=>e.id)
+        setSelectedIds(ids);setSelectedId(ids.at(-1)??null)
+        logMessage('已選取 '+ids.length+' 個可編輯物件。')
+        return
+      }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'p') {
         ev.preventDefault(); setPlotOpen(true); return
       }
